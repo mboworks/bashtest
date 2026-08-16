@@ -1,3 +1,5 @@
+# 0.6.1
+
 # 0.6.0
 
 * Added `skip_test "${REASON}"`: marks the current test as skipped and reports the reason. Use
