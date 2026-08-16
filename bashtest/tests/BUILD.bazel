@@ -31,3 +31,14 @@ bashtest(
     name = "bashtest_done_test",
     srcs = ["bashtest_done_test.sh"],
 )
+
+bashtest(
+    name = "bashtest_skip_test",
+    srcs = ["bashtest_skip_test.sh"],
+)
+
+bashtest(
+    name = "bashtest_no_skip_test",
+    srcs = ["bashtest_no_skip_test.sh"],
+    args = ["--no-skip"],
+)

@@ -1,4 +1,15 @@
-# 0.5.1
+# 0.6.0
+
+* Added `skip_test "${REASON}"`: marks the current test as skipped and reports the reason. Use
+  `skip_test "reason" && return` to end the test body.
+* Added `--no-skip`, which turns every `skip_test` into a failure. For an environment that
+  GUARANTEES the capability a test probes for, where a skip means the guarantee broke.
+* Fixed: a fatal abort inside a test no longer reports success. The `EXIT` trap's own last command
+  became the script's exit status, so a failing run could exit 0. This repository's own test suite
+  was dying at case 5 of 12 under `set -u` and still reporting PASS, hiding the seven that never
+  ran.
+* Fixed: `expect_contains` / `expect_not_contains` aborted the shell when given an EMPTY array.
+  bash 3.2 (which macOS ships) treats `"${@}"` and `"${array[@]}"` as unbound under `set -u`.
 
 # 0.5.0
 

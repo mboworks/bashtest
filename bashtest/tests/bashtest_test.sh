@@ -111,10 +111,10 @@ test::expect_contains() {
     NUM_SKIP="${_BASHTEST_NUM_SKIP}"
 
     EMPTY=()
-    expect_contains "foo" "${EMPTY[@]}" && bad_bashtest "Element is not present, yet test passed."
+    expect_contains "foo" ${EMPTY[@]+"${EMPTY[@]}"} && bad_bashtest "Element is not present, yet test passed."
     _BASHTEST_HAS_ERROR=0
 
-    expect_contains "" "${EMPTY[@]}" && bad_bashtest "Element is not present, yet test passed."
+    expect_contains "" ${EMPTY[@]+"${EMPTY[@]}"} && bad_bashtest "Element is not present, yet test passed."
     _BASHTEST_HAS_ERROR=0
 
     FOO_BAR=("foo" "bar")
@@ -151,10 +151,10 @@ test::expect_not_contains() {
     NUM_SKIP="${_BASHTEST_NUM_SKIP}"
 
     EMPTY=()
-    expect_not_contains "foo" "${EMPTY[@]}" || bad_bashtest "Element is not present, yet test failed."
+    expect_not_contains "foo" ${EMPTY[@]+"${EMPTY[@]}"} || bad_bashtest "Element is not present, yet test failed."
     _BASHTEST_HAS_ERROR=0
 
-    expect_not_contains "" "${EMPTY[@]}" || bad_bashtest "Element is not present, yet test failed."
+    expect_not_contains "" ${EMPTY[@]+"${EMPTY[@]}"} || bad_bashtest "Element is not present, yet test failed."
     _BASHTEST_HAS_ERROR=0
 
     FOO_BAR=("foo" "bar")

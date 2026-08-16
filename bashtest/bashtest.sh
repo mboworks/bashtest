@@ -42,6 +42,10 @@ _BASHTEST_USAGE=$(cat <<'EOF'
                                 while skipping other tests. The test as a whole
                                 is considered failing if no test was run.
 * --gtest-filter                Like '-f' but uses glob patterns.
+* --no-skip                     Turn every `skip_test` into a failure. For an
+                                environment that GUARANTEES the capability a
+                                test probes for, so a skip cannot quietly
+                                report green.
 * -u --update `<workspace>`     Update golden files, assuming the `<workspace>`.
 * -v --verbose                  Show additional output while tests succeed or fail.
                                 Prints all test calls and file diffs.
@@ -92,6 +96,12 @@ Note: If long test flags are denoted with '-'s, then '_' can also be used, e.g.
 * expect_pcre_not_matches "${REGEX}" "${TEXT}"
                             Assert that a text does NOT match a PCRE.
 
+
+## Skipping:
+
+* skip_test "${REASON}"     Marks the CURRENT test as skipped and reports the
+                            reason. Use `skip_test "reason" && return` to end
+                            the test body. With '--no-skip', skips fail.
 
 ## Status:
 
@@ -194,6 +204,7 @@ while getopts -- '-:f:hu:v' OPTION; do
         f|test[-_]filter) _BASHTEST_FILTER_REGX="${OPTARG}" ;;
         gtest[-_]filter) _BASHTEST_FILTER_GLOB="${OPTARG}" ;;
         h|help) echo "${_BASHTEST_USAGE}"; exit 2 ;;
+        no[-_]skip) _BASHTEST_NO_SKIP=1 ;;
         u|update[-_]golden) _BASHTEST_UPDATE_GOLDEN="${OPTARG}" ;;
         v|verbose) _BASHTEST_VERBOSE=1 ;;
         *) die "Unknown flag '${OPTERR}'." ;;
@@ -208,16 +219,25 @@ _BASHTEST_NUM_PASS=0
 _BASHTEST_NUM_FAIL=0
 _BASHTEST_NUM_SKIP=0
 
+: "${_BASHTEST_NO_SKIP:=}"
+
 _BASHTEST_HAS_ERROR=0
 _BASHTEST_SUGGEST_UPDATE=0
 _BASHTEST_INIT_FAILED=0
 _BASHTEST_DONE_FAILED=0
 
 function _bashtest_cleanup () {
+    # Capture FIRST and re-exit with it at the end: a trap's own last command otherwise becomes the
+    # script's exit status, so a `rm` returning 0 turned a fatal abort into success. That is not
+    # theoretical - an unbound-variable abort under `set -u` (bash 3.2 hates "${empty[@]}") killed
+    # this suite's own test at case 5 of 12 and it still reported PASS, hiding the seven that never
+    # ran. A test framework reporting green for tests it did not run is the worst bug it can have.
+    local status="${?}"
     # Bazel sandboxing will delete anyway unless `--sandbox_debug` is used.
     if [[ "${_BASHTEST_NUM_FAIL}" == "0" ]]; then
         rm -rf "${BASHTEST_TMPDIR}"
     fi
+    exit "${status}"
 }
 trap _bashtest_cleanup EXIT HUP INT QUIT TERM
 
@@ -246,13 +266,39 @@ function _bashtest_handler() {
     fi
     echo "[  TEST  ] ${TEST_NAME}"
     _BASHTEST_HAS_ERROR=0
-    if ${FUNC_NAME} && [[ "${_BASHTEST_HAS_ERROR}" == "0" ]]; then
+    _BASHTEST_SKIPPED=0
+    _BASHTEST_SKIP_REASON=
+    local _BASHTEST_RESULT=0
+    ${FUNC_NAME} || _BASHTEST_RESULT="${?}"
+    if [[ "${_BASHTEST_SKIPPED}" != "0" ]]; then
+        if [[ -n "${_BASHTEST_NO_SKIP}" ]]; then
+            echo >&2 "[  FAIL  ] ${TEST_NAME} (skip requested under --no-skip: ${_BASHTEST_SKIP_REASON})"
+            ((_BASHTEST_NUM_FAIL+=1))
+        else
+            echo "[  SKIP  ] ${TEST_NAME}: ${_BASHTEST_SKIP_REASON}"
+            ((_BASHTEST_NUM_SKIP+=1))
+        fi
+    elif [[ "${_BASHTEST_RESULT}" == "0" ]] && [[ "${_BASHTEST_HAS_ERROR}" == "0" ]]; then
         echo "[  PASS  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_PASS+=1))
     else
         echo >&2 "[  FAIL  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_FAIL+=1))
     fi
+}
+
+# Marks the current test as skipped. Return from the test immediately after calling it. Use
+# `--no-skip` where the environment guarantees the capability so a skip becomes a failure.
+#
+# ```sh
+# test::reads_through_a_mount() {
+#     command -v fusermount3 >/dev/null || { skip_test "no fuse3 on this machine"; return; }
+#     ...
+# }
+# ```
+skip_test() {
+    _BASHTEST_SKIPPED=1
+    _BASHTEST_SKIP_REASON="${1:-no reason given}"
 }
 
 # Returns whether a test function has had an expectation error. This is reset for every test function.
@@ -539,7 +585,9 @@ expect_ne() {
 expect_contains() {
     ELEMENT="${1}"
     shift
-    if _bashtest_contains_element "${ELEMENT}" "${@}"; then
+    # ${@+"${@}"}, not "${@}": with no remaining arguments (an EMPTY array was passed) bash 3.2
+    # under `set -u` treats "${@}" as unbound and aborts the shell. macOS ships bash 3.2.
+    if _bashtest_contains_element "${ELEMENT}" ${@+"${@}"}; then
         if [[ -n "${_BASHTEST_VERBOSE}" ]]; then
             echo ""
             echo "Test success:"
@@ -552,7 +600,7 @@ expect_contains() {
         echo >&2 "Test failure:"
         echo >&2 "  Expected: element is present in array:"
         echo >&2 "  Element:  '${ELEMENT}'"
-        echo >&2 "  Array:    '${*}'"
+        echo >&2 "  Array:    '${*+${*}}'"
         return 1
     fi
 }
@@ -567,7 +615,8 @@ expect_contains() {
 expect_not_contains() {
     ELEMENT="${1}"
     shift
-    if ! _bashtest_contains_element "${ELEMENT}" "${@}"; then
+    # See expect_contains: bash 3.2 + `set -u` aborts on "${@}" when nothing remains.
+    if ! _bashtest_contains_element "${ELEMENT}" ${@+"${@}"}; then
         if [[ -n "${_BASHTEST_VERBOSE}" ]]; then
             echo ""
             echo "Test success:"
@@ -580,7 +629,7 @@ expect_not_contains() {
         echo >&2 "Test failure:"
         echo >&2 "  Expected: element is NOT present in array:"
         echo >&2 "  Element:  '${ELEMENT}'"
-        echo >&2 "  Array:    '${*}'"
+        echo >&2 "  Array:    '${*+${*}}'"
         return 1
     fi
 }
