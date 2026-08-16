@@ -1,8 +1,7 @@
 # 0.6.0
 
-* Added `skip_test "${REASON}"`: skips the CURRENT test and ends its body immediately, so a
-  capability probe needs no `&& return` at the call site. Test bodies now run in a subshell, which
-  is what makes that possible; a body can therefore no longer leak variables into later tests.
+* Added `skip_test "${REASON}"`: marks the current test as skipped and reports the reason. Use
+  `skip_test "reason" && return` to end the test body.
 * Added `--no-skip`, which turns every `skip_test` into a failure. For an environment that
   GUARANTEES the capability a test probes for, where a skip means the guarantee broke.
 * Fixed: a fatal abort inside a test no longer reports success. The `EXIT` trap's own last command
@@ -11,8 +10,6 @@
   ran.
 * Fixed: `expect_contains` / `expect_not_contains` aborted the shell when given an EMPTY array.
   bash 3.2 (which macOS ships) treats `"${@}"` and `"${array[@]}"` as unbound under `set -u`.
-
-# 0.5.1
 
 # 0.5.0
 

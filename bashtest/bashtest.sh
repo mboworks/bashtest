@@ -99,11 +99,9 @@ Note: If long test flags are denoted with '-'s, then '_' can also be used, e.g.
 
 ## Skipping:
 
-* skip_test "${REASON}"     Skips the CURRENT test, reporting the reason. Ends
-                            the test body immediately, so it needs no
-                            `&& return` at the call site. Use it for a
-                            capability the machine may not have; use
-                            '--no-skip' where the environment guarantees it.
+* skip_test "${REASON}"     Marks the CURRENT test as skipped and reports the
+                            reason. Use `skip_test "reason" && return` to end
+                            the test body. With '--no-skip', skips fail.
 
 ## Status:
 
@@ -221,9 +219,6 @@ _BASHTEST_NUM_PASS=0
 _BASHTEST_NUM_FAIL=0
 _BASHTEST_NUM_SKIP=0
 
-# The exit code a test body uses to say "skipped" (see skip_test). 77 is the GNU autotools
-# convention for it, so it reads as a skip to anyone who has met that ecosystem.
-_BASHTEST_SKIP_EXIT=77
 : "${_BASHTEST_NO_SKIP:=}"
 
 _BASHTEST_HAS_ERROR=0
@@ -271,30 +266,19 @@ function _bashtest_handler() {
     fi
     echo "[  TEST  ] ${TEST_NAME}"
     _BASHTEST_HAS_ERROR=0
-    # The body runs in a SUBSHELL so that `skip_test` can abandon the rest of it. A bash function
-    # can only return from itself, so a skip helper that merely returns leaves the remainder of the
-    # test running - which is why callers wrote `_skip_if_unsupported && return` by hand at every
-    # call site and got it wrong once. The subshell's EXIT CODE carries the verdict out: the skip
-    # sentinel, or the body's own pass/fail (expectation errors live in a variable the subshell
-    # cannot write back, so they are folded in here, inside).
+    _BASHTEST_SKIPPED=0
+    _BASHTEST_SKIP_REASON=
     local _BASHTEST_RESULT=0
-    (
-        ${FUNC_NAME} || exit 1
-        [[ "${_BASHTEST_HAS_ERROR}" == "0" ]] || exit 1
-        exit 0
-    ) || _BASHTEST_RESULT="${?}"
-    if [[ "${_BASHTEST_RESULT}" == "${_BASHTEST_SKIP_EXIT}" ]]; then
+    ${FUNC_NAME} || _BASHTEST_RESULT="${?}"
+    if [[ "${_BASHTEST_SKIPPED}" != "0" ]]; then
         if [[ -n "${_BASHTEST_NO_SKIP}" ]]; then
-            # --no-skip: where the environment PROMISES the capability, a skip is the failure it
-            # was hiding. A test suite that silently skips its whole point reports green in a
-            # tenth of a second, which is exactly the bug this flag exists to catch.
-            echo >&2 "[  FAIL  ] ${TEST_NAME} (skipped under --no-skip)"
+            echo >&2 "[  FAIL  ] ${TEST_NAME} (skip requested under --no-skip: ${_BASHTEST_SKIP_REASON})"
             ((_BASHTEST_NUM_FAIL+=1))
         else
-            echo "[  SKIP  ] ${TEST_NAME}"
+            echo "[  SKIP  ] ${TEST_NAME}: ${_BASHTEST_SKIP_REASON}"
             ((_BASHTEST_NUM_SKIP+=1))
         fi
-    elif [[ "${_BASHTEST_RESULT}" == "0" ]]; then
+    elif [[ "${_BASHTEST_RESULT}" == "0" ]] && [[ "${_BASHTEST_HAS_ERROR}" == "0" ]]; then
         echo "[  PASS  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_PASS+=1))
     else
@@ -303,25 +287,18 @@ function _bashtest_handler() {
     fi
 }
 
-# Skips the CURRENT test, reporting `reason`. Ends the test body immediately - unlike a helper that
-# returns, which only ends itself. Use it for a capability the machine may not have (a kernel
-# feature, an optional tool); use `--no-skip` where the environment guarantees the capability, so a
-# skip becomes a failure instead of a quiet green.
+# Marks the current test as skipped. Return from the test immediately after calling it. Use
+# `--no-skip` where the environment guarantees the capability so a skip becomes a failure.
 #
 # ```sh
 # test::reads_through_a_mount() {
-#     command -v fusermount3 >/dev/null || skip_test "no fuse3 on this machine"
+#     command -v fusermount3 >/dev/null || { skip_test "no fuse3 on this machine"; return; }
 #     ...
 # }
 # ```
 skip_test() {
-    local reason="${1:-}"
-    if [[ -n "${reason}" ]]; then
-        # The reason, not the verdict: the handler decides whether this becomes SKIP or, under
-        # --no-skip, FAIL. Printing "[  SKIP  ]" here would contradict the FAIL line that follows.
-        echo "Skip requested: ${reason}"
-    fi
-    exit "${_BASHTEST_SKIP_EXIT}"
+    _BASHTEST_SKIPPED=1
+    _BASHTEST_SKIP_REASON="${1:-no reason given}"
 }
 
 # Returns whether a test function has had an expectation error. This is reset for every test function.

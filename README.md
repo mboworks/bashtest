@@ -29,7 +29,7 @@ The flags can be used on the `bazel run` and `bazel test` commands (the latter r
 * expectation `expect_not_matches` "\${REGEX}" "\${TEXT}": Assert that a text does not match an extended regular expression.
 * expectation `expect_pcre_matches` "\${REGEX}" "\${TEXT}": Assert that a text matches a Perl Compatible Regular Expression (requires an external PCRE tool: `grep -P`, `pcre2grep`, or `pcregrep`).
 * expectation `expect_pcre_not_matches` "\${REGEX}" "\${TEXT}": Assert that a text does not match a Perl Compatible Regular Expression.
-* control `skip_test` "\${REASON}": Skips the current test, reporting the reason. It ends the test body immediately, so a capability probe needs no `&& return` at the call site. Test bodies run in a subshell, which is what makes that work; a body therefore cannot leak variables into later tests.
+* control `skip_test` "\${REASON}": Marks the current test as skipped and reports the reason. Use `skip_test "reason" && return` to end the test body.
 * special test function `test::test_init`: If present, then this function runs first! Tests will only be executed if it succeeds.
 * special test function `test::test_done`: If present, then this function runs last!
 

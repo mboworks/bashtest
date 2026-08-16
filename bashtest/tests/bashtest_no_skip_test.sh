@@ -18,15 +18,13 @@
 # capability a test probes for: there, "skipped" means the guarantee broke, and a suite that
 # reports green while skipping its own subject is the bug this flag exists to catch.
 #
-# The flag is set directly rather than passed on the command line because the assertion here is
-# about the RUNNER's behaviour, and a bashtest target cannot fail on purpose without the harness
-# treating it as a real failure.
+# The target passes `--no-skip`, exercising the public flag parser as well as the runner behavior.
 
 # shellcheck disable=SC2317 # Functions are called bashtest
 
 set -euo pipefail
 
-# shellcheck disable=SC1090,SC1091,SC2154
+# shellcheck disable=SC1090,SC1091,SC2153,SC2154
 source "${helly25_bashtest}"
 
 bad_bashtest() {
@@ -34,18 +32,17 @@ bad_bashtest() {
     exit 1
 }
 
-_BASHTEST_NO_SKIP=1
-
 test::a_test_that_passes() {
     expect_eq "x" "x"
 }
 
 test::a_skip_that_must_be_reported_as_failure() {
-    skip_test "the environment promised this capability"
+    skip_test "the environment promised this capability" && return
 }
 
 test_runner && bad_bashtest "A skip under --no-skip must fail the run."
 
 [[ "${_BASHTEST_NUM_FAIL}" == "1" ]] || bad_bashtest "Expected 1 failure, got '${_BASHTEST_NUM_FAIL}'."
+# shellcheck disable=SC2153 # Assigned by the sourced test framework.
 [[ "${_BASHTEST_NUM_SKIP}" == "0" ]] || bad_bashtest "Expected 0 skips, got '${_BASHTEST_NUM_SKIP}'."
 [[ "${_BASHTEST_NUM_PASS}" == "1" ]] || bad_bashtest "Expected 1 pass, got '${_BASHTEST_NUM_PASS}'."

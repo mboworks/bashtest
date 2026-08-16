@@ -14,9 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# `skip_test` ends the test it is called from and counts as SKIP, not PASS and not FAIL. The
-# assertions live AFTER test_runner because a skipped test cannot assert about itself: the whole
-# point is that its body stops there.
+# `skip_test` marks the current test as SKIP, not PASS and not FAIL.
 
 # shellcheck disable=SC2317 # Functions are called bashtest
 
@@ -30,30 +28,28 @@ bad_bashtest() {
     exit 1
 }
 
-_REACHED_AFTER_SKIP=0
+_STATE_FROM_PREVIOUS_TEST=0
 
 test::a_test_that_passes() {
     expect_eq "x" "x"
+    _STATE_FROM_PREVIOUS_TEST=1
 }
 
-test::skip_ends_the_body_immediately() {
-    skip_test "pretending this machine lacks a capability"
-    # If skip_test merely returned, execution would continue here - which is exactly the bug that
-    # made every caller write `skip_if_x && return` by hand.
-    _REACHED_AFTER_SKIP=1
+test::skip_with_return_ends_the_body() {
+    skip_test "pretending this machine lacks a capability" && return
     bad_bashtest "Statements after skip_test must not run."
 }
 
 test::skip_needs_no_reason() {
-    skip_test
+    skip_test && return
+}
+
+test::normal_tests_keep_shell_state() {
+    expect_eq "1" "${_STATE_FROM_PREVIOUS_TEST}"
 }
 
 test_runner || bad_bashtest "Skipped tests must not fail the run."
 
 [[ "${_BASHTEST_NUM_SKIP}" == "2" ]] || bad_bashtest "Expected 2 skips, got '${_BASHTEST_NUM_SKIP}'."
-[[ "${_BASHTEST_NUM_PASS}" == "1" ]] || bad_bashtest "Expected 1 pass, got '${_BASHTEST_NUM_PASS}'."
+[[ "${_BASHTEST_NUM_PASS}" == "2" ]] || bad_bashtest "Expected 2 passes, got '${_BASHTEST_NUM_PASS}'."
 [[ "${_BASHTEST_NUM_FAIL}" == "0" ]] || bad_bashtest "Expected 0 failures, got '${_BASHTEST_NUM_FAIL}'."
-
-# The subshell is what stops the body, so the parent's variable must be untouched. This also pins
-# that a test body cannot leak state into later tests.
-[[ "${_REACHED_AFTER_SKIP}" == "0" ]] || bad_bashtest "Body continued past skip_test."

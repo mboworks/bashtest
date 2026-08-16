@@ -40,4 +40,5 @@ bashtest(
 bashtest(
     name = "bashtest_no_skip_test",
     srcs = ["bashtest_no_skip_test.sh"],
+    args = ["--no-skip"],
 )
