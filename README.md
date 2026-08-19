@@ -14,10 +14,15 @@ Run one of the following commands to get detailed information on the actual bash
 
 The flags can be used on the `bazel run` and `bazel test` commands (the latter requiring `--test_arg=...`).
 
+Use `--keep-tmpdir=never|failure|always` to control scratch retention; the default is `failure`.
+A retained path is printed at shutdown. Bazel itself may still remove a sandbox unless the test runs
+locally or with `--sandbox_debug`.
+
 ### Functionality
 
 * status helper `test_has_error`: Returns whether a test function has had an expectation error. This is reset for every test function.
 * status helper `test_has_failed_tests`: Returns whether a test program had previous failing test functions.
+* scratch helper `test_tmpdir [name]`: Creates and prints a unique directory below `${BASHTEST_TMPDIR}`.
 * expectation `expect_eq` "\${LHS}" "\${RHS}": Asserts that two strings are the same.
 * expectation `expect_ne` "\${LHS}" "\${RHS}": Asserts that two strings are different.
 * expectation `expect_files_eq` "\${LHS}" "\${RHS}": Asserts that two file are the same (supports golden updates).

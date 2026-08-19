@@ -27,6 +27,7 @@ _BASHTEST_USAGE=$(cat <<'EOF'
 * Each test should use `return 0` to indicate success or `return 1` for failure.
 * Call `test_runner` at the end of the test program.
 * Provides '${BASHTEST_TMPDIR}' which is a test scratch directory.
+* `test_tmpdir [name]` creates and prints a unique directory below it.
 * Tests can be filtered (skipping non matching) using flag '--test_filter `<pattern>`'.
 * Tests that use diff functionality 'expect_files_eq' can use '-u="${PWD}"' to
   update their golden files.
@@ -46,6 +47,11 @@ _BASHTEST_USAGE=$(cat <<'EOF'
                                 environment that GUARANTEES the capability a
                                 test probes for, so a skip cannot quietly
                                 report green.
+* --keep-tmpdir `<mode>`        Scratch retention: `never`, `failure` (the
+                                default), or `always`. A retained path is
+                                printed at shutdown. Bazel may still remove its
+                                sandbox unless run locally or with
+                                `--sandbox_debug`.
 * -u --update `<workspace>`     Update golden files, assuming the `<workspace>`.
 * -v --verbose                  Show additional output while tests succeed or fail.
                                 Prints all test calls and file diffs.
@@ -115,6 +121,11 @@ Note: If long test flags are denoted with '-'s, then '_' can also be used, e.g.
                             Test will only be executed if it succeeds.
 * test::test_done           If present, then this function runs last!
 
+## Temporary files:
+
+* test_tmpdir [NAME]        Create and print a unique scratch directory. NAME
+                            is an optional readable prefix, not a path.
+
 ## Example:
 
 ```sh
@@ -147,6 +158,7 @@ EOF
 
 _BASHTEST_FILTER_REGX=""
 _BASHTEST_FILTER_GLOB=""
+_BASHTEST_KEEP_TMPDIR="failure"
 _BASHTEST_UPDATE_GOLDEN=""
 _BASHTEST_VERBOSE=
 
@@ -161,6 +173,7 @@ _BASHTEST_VERBOSE=
 LONG_OPTIONS_WITH_ARGS=(
     "test[-_]filter"
     "gtest[-_]filter"
+    "keep[-_]tmpdir"
     "update[-_]golden"
 )
 while getopts -- '-:f:hu:v' OPTION; do
@@ -204,6 +217,12 @@ while getopts -- '-:f:hu:v' OPTION; do
         f|test[-_]filter) _BASHTEST_FILTER_REGX="${OPTARG}" ;;
         gtest[-_]filter) _BASHTEST_FILTER_GLOB="${OPTARG}" ;;
         h|help) echo "${_BASHTEST_USAGE}"; exit 2 ;;
+        keep[-_]tmpdir)
+            case "${OPTARG}" in
+                never|failure|always) _BASHTEST_KEEP_TMPDIR="${OPTARG}" ;;
+                *) die "Unknown scratch-retention mode '${OPTARG}'; expected never, failure, or always." ;;
+            esac
+            ;;
         no[-_]skip) _BASHTEST_NO_SKIP=1 ;;
         u|update[-_]golden) _BASHTEST_UPDATE_GOLDEN="${OPTARG}" ;;
         v|verbose) _BASHTEST_VERBOSE=1 ;;
@@ -233,9 +252,15 @@ function _bashtest_cleanup () {
     # this suite's own test at case 5 of 12 and it still reported PASS, hiding the seven that never
     # ran. A test framework reporting green for tests it did not run is the worst bug it can have.
     local status="${?}"
-    # Bazel sandboxing will delete anyway unless `--sandbox_debug` is used.
-    if [[ "${_BASHTEST_NUM_FAIL}" == "0" ]]; then
+    local keep=0
+    if [[ "${_BASHTEST_KEEP_TMPDIR}" == "always" ]] \
+        || { [[ "${_BASHTEST_KEEP_TMPDIR}" == "failure" ]] && [[ "${_BASHTEST_NUM_FAIL}" != "0" ]]; }; then
+        keep=1
+    fi
+    if [[ "${keep}" == "0" ]]; then
         rm -rf "${BASHTEST_TMPDIR}"
+    else
+        echo >&2 "Preserved test scratch directory: ${BASHTEST_TMPDIR}"
     fi
     exit "${status}"
 }
@@ -244,6 +269,17 @@ trap _bashtest_cleanup EXIT HUP INT QUIT TERM
 mkdir -p "${TEST_TMPDIR:=/tmp/$(date "+%Y%m%dT%H%M%S")}"
 BASHTEST_TMPDIR="$(mktemp -d -p "${TEST_TMPDIR}")"
 declare -r BASHTEST_TMPDIR
+
+# Creates one uniquely named directory below bashtest's owned scratch root and prints its path.
+# The optional name is a basename prefix only: accepting a path would let a test escape cleanup.
+# Call as `root="$(test_tmpdir tree)"`; the helper has no caller-state side effects.
+test_tmpdir() {
+    local name="${1:-tmp}"
+    if [[ "${name}" == */* ]] || [[ "${name}" == "." ]] || [[ "${name}" == ".." ]]; then
+        die "Temporary-directory name must be a basename: '${name}'."
+    fi
+    mktemp -d "${BASHTEST_TMPDIR}/${name}.XXXXXX"
+}
 
 ################################################################################
 function _bashtest_handler() {
