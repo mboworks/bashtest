@@ -41,6 +41,24 @@ test::test_done() {
     _DONE_CALLED=1
 }
 
+test::test_tmpdir_allocates_unique_named_directories() {
+    local first second
+    first="$(test_tmpdir fixture)"
+    second="$(test_tmpdir fixture)"
+    [[ -d "${first}" ]] || bad_bashtest "test_tmpdir did not create '${first}'."
+    [[ -d "${second}" ]] || bad_bashtest "test_tmpdir did not create '${second}'."
+    [[ "${first}" != "${second}" ]] || bad_bashtest "test_tmpdir reused '${first}'."
+    [[ "${first}" == "${BASHTEST_TMPDIR}/fixture."* ]] \
+        || bad_bashtest "test_tmpdir escaped or ignored its prefix: '${first}'."
+}
+
+test::test_tmpdir_rejects_paths() {
+    local output status=0
+    output="$(test_tmpdir ../escape 2>&1)" || status="${?}"
+    [[ "${status}" != "0" ]] || bad_bashtest "test_tmpdir accepted a path."
+    [[ "${output}" == *"must be a basename"* ]] || bad_bashtest "test_tmpdir gave no useful error."
+}
+
 test::expect_eq() {
     [[ "${_BASHTEST_HAS_ERROR}" == "0" ]] || bad_bashtest "Test starts with _BASHTEST_HAS_ERROR != 0, got '${_BASHTEST_HAS_ERROR}'."
 
