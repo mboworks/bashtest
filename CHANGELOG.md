@@ -1,5 +1,11 @@
 # 0.6.1
 
+* Transferred the canonical repository from `helly25/bashtest` to
+  `mboworks/bashtest`; future releases use the new `mboworks_bashtest` module
+  name.
+* Added managed per-fixture scratch directories through `test_tmpdir`, with
+  configurable retention and cleanup.
+
 # 0.6.0
 
 * Added `skip_test "${REASON}"`: marks the current test as skipped and reports the reason. Use

@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Module helly25_bashtest"""
+"""Module mboworks_bashtest"""
 
 module(
-    name = "helly25_bashtest",
+    name = "mboworks_bashtest",
     version = "0.6.1",
 )
 

@@ -21,7 +21,7 @@
 set -euo pipefail
 
 # shellcheck disable=SC1090,SC1091,SC2154
-source "${helly25_bashtest}"
+source "${mboworks_bashtest}"
 
 bad_bashtest() {
     echo >&2 "FATAL: Test functionality broken: ${*}"

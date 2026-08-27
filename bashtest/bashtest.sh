@@ -134,7 +134,7 @@ Note: If long test flags are denoted with '-'s, then '_' can also be used, e.g.
 set -euo pipefail
 
 # shellcheck disable=SC1090,SC1091,SC2154 # Source via magic bahtest variable
-source "${helly25_bashtest}"
+source "${mboworks_bashtest}"
 
 function test::hello() {
     expect_ne "Hello" "World"
@@ -146,7 +146,7 @@ test_runner
 In your BUILD file:
 
 ```bzl
-load ("@helly25_bashtest//bashtest:bashtest.bzl", "bashtest")
+load ("@mboworks_bashtest//bashtest:bashtest.bzl", "bashtest")
 
 bashtest(
     name = "my_test",

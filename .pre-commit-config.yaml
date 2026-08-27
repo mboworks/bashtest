@@ -40,11 +40,12 @@ repos:
   - id: compare-versions
     name: compare-versions
     description: |
-      Compare the versions in CHANGELOG.md and MODULES.bazel.
+      Require matching CHANGELOG.md and MODULE.bazel versions. After a release,
+      the first later commit must advance both beyond the latest release tag.
     language: system
     entry: .pre-commit/check_version.sh
     pass_filenames: False
-    types: [text]
+    always_run: true
   - id: no-do-not-merge
     name: No 'DO NOT MERGE'
     description: |
@@ -61,7 +62,7 @@ repos:
     description: |
       * Use descriptive, referenceable TODOs. Examples:
         * `// TODO(nero.windstriker@helly25.com)`
-        * `# FIXME(https://github.com/helly25/bzl/issues/42)`
+        * `# FIXME(https://github.com/mboworks/bashtest/issues/42)`
       * From the google style guide:
         Use FIXME/TODO comments for code that is temporary, a short-term solution.
         FIXME/TODOs should include the string `FIXME` or `TODO` in all caps, followed by a person's

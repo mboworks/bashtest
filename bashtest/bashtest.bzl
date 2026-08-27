@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""helly25_bashtest/bashtest:bashtest"""
+"""mboworks_bashtest/bashtest:bashtest"""
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
@@ -21,7 +21,7 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 # constructed in a `.bzl` file is resolved against the repo that defines the
 # file, so the macro works no matter what apparent repo name a consumer assigns
 # it (and under both bzlmod and the legacy WORKSPACE setup). This is what lets
-# the module be named `helly25_bashtest` without a `com_helly25_bashtest` alias.
+# the module to work without an apparent repository-name alias.
 _BASHTEST_SH = Label("//bashtest:bashtest_sh")
 
 def bashtest(
@@ -32,7 +32,7 @@ def bashtest(
     """Bashtest wrapper.
 
     Specialized `sh_shell` rule to simplify `bashtest` usage. The rule provides
-    the `helly25_bashtest` environement variable that should
+    the `mboworks_bashtest` environment variable that should
     be used in test scripts to source the `bashtest.sh` script as follows:
 
     * File: sh_test.sh
@@ -41,7 +41,7 @@ def bashtest(
     set -euo pipefail
 
     # shellcheck disable=SC1090,SC1091,SC2154
-    source "${helly25_bashtest}"
+    source "${mboworks_bashtest}"
 
     test::my_test() {
       expect_ne "Hello" "World"
@@ -56,7 +56,7 @@ def bashtest(
     * File: BUILD
 
     ```bzl
-    load("@helly25_bashtest//bashtest:bashtest.bzl", "bashtest")
+    load("@mboworks_bashtest//bashtest:bashtest.bzl", "bashtest")
 
     bashtest(
         name = "sh_test",
@@ -67,12 +67,12 @@ def bashtest(
     Args:
         name:      Name of the test rule. Should end in `_test`
         deps:      Dependencies which will have bashtest_sh automatically added.
-        env:       Environmentname that automatically adds `helly25_bashtest`.
+        env:       Environment name that automatically adds `mboworks_bashtest`.
         **kwargs:  All other attributes are passed through as is.
     """
 
     extra_env = {
-        "helly25_bashtest": "$(rootpath {label})".format(label = _BASHTEST_SH),
+        "mboworks_bashtest": "$(rootpath {label})".format(label = _BASHTEST_SH),
     }
     sh_test(
         name = name,

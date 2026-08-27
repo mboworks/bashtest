@@ -2,7 +2,7 @@
 
 This shell test library provides Bazel macro rules to simplify shell testing.
 
-The library is tested with continuous integration: [![Test](https://github.com/helly25/bashtest/actions/workflows/main.yml/badge.svg)](https://github.com/helly25/bashtest/actions/workflows/main.yml).
+The library is tested with continuous integration: [![Test](https://github.com/mboworks/bashtest/actions/workflows/main.yml/badge.svg)](https://github.com/mboworks/bashtest/actions/workflows/main.yml).
 
 ## Bashtest
 
@@ -46,7 +46,7 @@ locally or with `--sandbox_debug`.
 set -euo pipefail
 
 # shellcheck disable=SC1090,SC1091,SC2154
-source "${helly25_bashtest}"
+source "${mboworks_bashtest}"
 
 test::my_test() {
   expect_ne "Hello" "World"
@@ -61,7 +61,7 @@ test_runner
 2) Write or extend a BUILD file
 
 ```bzl
-load("@helly25_bashtest//bashtest:bashtest.bzl", "bashtest")
+load("@mboworks_bashtest//bashtest:bashtest.bzl", "bashtest")
 
 bashtest(
     name = "sh_test",
@@ -90,8 +90,8 @@ This repository requires bash to work (Linux, MacOs).
 
 ### MODULE.bazel
 
-Check [Releases](https://github.com/helly25/bashtest/releases) for details. All that is needed is a `bazel_dep` instruction with the correct version.
+Check [Releases](https://github.com/mboworks/bashtest/releases) for details. All that is needed is a `bazel_dep` instruction with the correct version.
 
 ```
-bazel_dep(name = "helly25_bashtest", version = "0.0.0")
+bazel_dep(name = "mboworks_bashtest", version = "0.0.0")
 ```
