@@ -1,3 +1,5 @@
+# 0.6.2
+
 # 0.6.1
 
 * Transferred the canonical repository from `helly25/bashtest` to
