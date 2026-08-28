@@ -15,4 +15,4 @@ tasks:
     platform: ${{ platform }}
     bazel: ${{ bazel }}
     build_targets:
-      - '@helly25_bashtest//bashtest/...'
+      - '@mboworks_bashtest//bashtest/...'

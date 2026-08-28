@@ -27,7 +27,7 @@ function die() {
 
 # Custom args to update as needed.
 PACKAGE_NAME="bashtest"
-BAZELMOD_NAME="helly25_bashtest"
+BAZELMOD_NAME="mboworks_bashtest"
 PATCHES=()
 
 # Automatic vars from workflow integration.
@@ -99,7 +99,7 @@ git archive --format=tar.gz --prefix="${PREFIX}/" -o "${ARCHIVE}" --add-virtual-
 
 # Print header
 echo "# Version ${VERSION}"
-echo "## [Changelog](https://github.com/helly25/${PACKAGE_NAME}/blob/${TAG}/CHANGELOG.md)"
+echo "## [Changelog](https://github.com/mboworks/${PACKAGE_NAME}/blob/${TAG}/CHANGELOG.md)"
 
 # Print Changelog
 awk '/^#/{f+=1;if(f>1)exit} !/^#/{print}' <CHANGELOG.md

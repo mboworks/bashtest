@@ -1,5 +1,5 @@
 {
-  "homepage": "https://github.com/helly25/bashtest",
+  "homepage": "https://github.com/mboworks/bashtest",
   "maintainers": [
     {
       "name": "helly25",
@@ -8,7 +8,7 @@
     }
   ],
   "repository": [
-    "github:helly25/bashtest"
+    "github:mboworks/bashtest"
   ],
   "versions": [],
   "yanked_versions": {}

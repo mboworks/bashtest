@@ -1,4 +1,4 @@
-# helly25_bashtest//bashtest
+# mboworks_bashtest//bashtest
 
 Bashtest provides `sh_test` wrapper that simplifies the creation of shell tests.
 
