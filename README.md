@@ -93,5 +93,5 @@ This repository requires bash to work (Linux, MacOs).
 Check [Releases](https://github.com/mboworks/bashtest/releases) for details. All that is needed is a `bazel_dep` instruction with the correct version.
 
 ```
-bazel_dep(name = "mboworks_bashtest", version = "0.0.0")
+bazel_dep(name = "mboworks_bashtest", version = "0.6.1")
 ```
