@@ -13,7 +13,9 @@ jobs:
       id-token: write
     with:
       release_files: bashtest-*.tar.gz
-      prerelease: false
+      # Keep the GitHub release provisional until the secondary BCR
+      # publication process has completed.
+      prerelease: true
 
   # Mirror the release to the Bazel Central Registry (replaces the retired
   # publish-to-bcr GitHub App). See .github/workflows/publish.yaml.

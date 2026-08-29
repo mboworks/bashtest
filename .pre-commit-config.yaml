@@ -61,7 +61,7 @@ repos:
     name: No TODOs without context
     description: |
       * Use descriptive, referenceable TODOs. Examples:
-        * `// TODO(nero.windstriker@helly25.com)`
+        * `// TODO(marcus.boerger@gmail.com)`
         * `# FIXME(https://github.com/mboworks/bashtest/issues/42)`
       * From the google style guide:
         Use FIXME/TODO comments for code that is temporary, a short-term solution.
