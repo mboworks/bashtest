@@ -5,15 +5,15 @@ jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: 3.11
       - uses: pre-commit/action@v3.0.1
-      - uses: pre-commit-ci/lite-action@v1.0.2
+      - uses: pre-commit-ci/lite-action@v1.1.0
         if: always()
 
   test:
@@ -24,8 +24,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: bazel-contrib/setup-bazel@0.14.0
+    - uses: actions/checkout@v7
+    - uses: bazel-contrib/setup-bazel@0.19.0
       with:
         bazelisk-cache: true
         # Store build cache per workflow.
@@ -41,7 +41,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Ensure every job is wired into this gate
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
