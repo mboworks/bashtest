@@ -111,3 +111,6 @@ cat <<EOF
 bazel_dep(name = "${BAZELMOD_NAME}", version = "${VERSION}")
 \`\`\`
 EOF
+
+printf '\n'
+bash tools/release_notes.sh "${TAG}"
