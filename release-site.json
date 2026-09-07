@@ -1,0 +1,11 @@
+{
+  "pages": {
+    "README.md": "index.html",
+    "CHANGELOG.md": "CHANGELOG.html",
+    "CONTRIBUTING.md": "CONTRIBUTING.html",
+    "bashtest/README.md": "bashtest/README.html",
+    "CODE_OF_CONDUCT.md": "CODE_OF_CONDUCT.html",
+    "RULES.md": "RULES.html"
+  },
+  "links": []
+}

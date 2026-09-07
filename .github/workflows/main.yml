@@ -2,6 +2,26 @@ name: Test
 on: [push]
 
 jobs:
+  release-site-tests:
+    name: Release site tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: python3 -m unittest discover -s tools -p release_site_test.py
+      - run: python3 -m unittest discover -s tools -p release_notes_test.py
+      - name: Verify configured documentation and generated links
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # This is a disposable build on the runner, never a Pages publication.
+          python3 tools/release_site.py . "${RUNNER_TEMP}/release-site-check" \
+            --repository "${GITHUB_REPOSITORY}" --tag 0.0.0-verification --latest ""
+
   pre-commit:
     runs-on: ubuntu-latest
     steps:
