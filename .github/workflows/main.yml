@@ -57,7 +57,7 @@ jobs:
         bazel test //...
 
   done:
-    needs: [pre-commit, test]
+    needs: [release-site-tests, pre-commit, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
