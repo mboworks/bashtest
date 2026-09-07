@@ -1,0 +1,88 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>README.md - bashtest 0.6.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.6.1/">Home</a><a href="/bashtest/site/tag/0.6.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.6.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/655ad0a13e39b503e1fa3937a62eef100fdda05c">Source</a></nav><p>bashtest 0.6.1</p><main><h1 dir="auto" id="bashtestsh---a-bazel-shell-test-runner">bashtest.sh - A Bazel shell test runner.</h1>
+<p dir="auto">This shell test library provides Bazel macro rules to simplify shell testing.</p>
+<p dir="auto">The library is tested with continuous integration: <a href="https://github.com/mboworks/bashtest/actions/workflows/main.yml"><img src="assets/ce733292a922c08274cf5a2096f8fa4cf01023bfa51a36ef6beecaaef371a9d9.svg" alt="Test" style="max-width: 100%;"></a>.</p>
+<h2 dir="auto" id="bashtest">Bashtest</h2>
+<p dir="auto">Run one of the following commands to get detailed information on the actual bashtest.sh script:</p>
+<ul dir="auto">
+<li><code class="notranslate">bazel run //bashtest:bashtest_help</code></li>
+<li><code class="notranslate">bazel run //bashtest:bashtest_help | pandoc -s -t man | man -l -</code></li>
+<li><code class="notranslate">bazel run //bashtest:bashtest_help | pandoc | lynx -stdin</code></li>
+</ul>
+<p dir="auto">The flags can be used on the <code class="notranslate">bazel run</code> and <code class="notranslate">bazel test</code> commands (the latter requiring <code class="notranslate">--test_arg=...</code>).</p>
+<p dir="auto">Use <code class="notranslate">--keep-tmpdir=never|failure|always</code> to control scratch retention; the default is <code class="notranslate">failure</code>.<br>
+A retained path is printed at shutdown. Bazel itself may still remove a sandbox unless the test runs<br>
+locally or with <code class="notranslate">--sandbox_debug</code>.</p>
+<h3 dir="auto" id="functionality">Functionality</h3>
+<ul dir="auto">
+<li>status helper <code class="notranslate">test_has_error</code>: Returns whether a test function has had an expectation error. This is reset for every test function.</li>
+<li>status helper <code class="notranslate">test_has_failed_tests</code>: Returns whether a test program had previous failing test functions.</li>
+<li>scratch helper <code class="notranslate">test_tmpdir [name]</code>: Creates and prints a unique directory below <code class="notranslate">${BASHTEST_TMPDIR}</code>.</li>
+<li>expectation <code class="notranslate">expect_eq</code> "${LHS}" "${RHS}": Asserts that two strings are the same.</li>
+<li>expectation <code class="notranslate">expect_ne</code> "${LHS}" "${RHS}": Asserts that two strings are different.</li>
+<li>expectation <code class="notranslate">expect_files_eq</code> "${LHS}" "${RHS}": Asserts that two file are the same (supports golden updates).</li>
+<li>expectation <code class="notranslate">expect_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is present in an array.</li>
+<li>expectation <code class="notranslate">expect_not_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is not present in an array.</li>
+<li>expectation <code class="notranslate">expect_output_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text contains a literal substring.</li>
+<li>expectation <code class="notranslate">expect_output_not_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text does not contain a literal substring.</li>
+<li>expectation <code class="notranslate">expect_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches an extended regular expression (bash built-in; <code class="notranslate">^</code>/<code class="notranslate">$</code> anchor the whole text).</li>
+<li>expectation <code class="notranslate">expect_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match an extended regular expression.</li>
+<li>expectation <code class="notranslate">expect_pcre_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches a Perl Compatible Regular Expression (requires an external PCRE tool: <code class="notranslate">grep -P</code>, <code class="notranslate">pcre2grep</code>, or <code class="notranslate">pcregrep</code>).</li>
+<li>expectation <code class="notranslate">expect_pcre_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match a Perl Compatible Regular Expression.</li>
+<li>control <code class="notranslate">skip_test</code> "${REASON}": Marks the current test as skipped and reports the reason. Use <code class="notranslate">skip_test "reason" &amp;&amp; return</code> to end the test body.</li>
+<li>special test function <code class="notranslate">test::test_init</code>: If present, then this function runs first! Tests will only be executed if it succeeds.</li>
+<li>special test function <code class="notranslate">test::test_done</code>: If present, then this function runs last!</li>
+</ul>
+<h3 dir="auto" id="example">Example</h3>
+<ol dir="auto">
+<li>Write a test that sources bashtest.</li>
+</ol>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate"><span class="pl-c1">set</span> -euo pipefail
+
+<span class="pl-c"><span class="pl-c">#</span> shellcheck disable=SC1090,SC1091,SC2154</span>
+<span class="pl-c1">source</span> <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${mboworks_bashtest}</span><span class="pl-pds">"</span></span>
+
+<span class="pl-en">test::my_test</span>() {
+  expect_ne <span class="pl-s"><span class="pl-pds">"</span>Hello<span class="pl-pds">"</span></span> <span class="pl-s"><span class="pl-pds">"</span>World<span class="pl-pds">"</span></span>
+  <span class="pl-c"><span class="pl-c">#</span> Your tests go here...</span>
+}
+
+<span class="pl-c"><span class="pl-c">#</span> More tests go here...</span>
+
+test_runner</pre></div>
+<ol start="2" dir="auto">
+<li>Write or extend a BUILD file</li>
+</ol>
+<div class="highlight highlight-source-python" dir="auto"><pre class="notranslate"><span class="pl-en">load</span>(<span class="pl-s">"@mboworks_bashtest//bashtest:bashtest.bzl"</span>, <span class="pl-s">"bashtest"</span>)
+
+<span class="pl-en">bashtest</span>(
+    <span class="pl-s1">name</span> <span class="pl-c1">=</span> <span class="pl-s">"sh_test"</span>,
+    <span class="pl-s1">srcs</span> <span class="pl-c1">=</span> [<span class="pl-s">"sh_test.sh"</span>],
+)</pre></div>
+<h3 dir="auto" id="matching-command-output">Matching command output</h3>
+<p dir="auto">To assert on captured command output, prefer the built-in matchers<br>
+(<code class="notranslate">expect_output_contains</code>, <code class="notranslate">expect_matches</code>, <code class="notranslate">expect_pcre_matches</code>) over<br>
+hand-rolled pipelines.</p>
+<div class="markdown-alert markdown-alert-warning" dir="auto"><p class="markdown-alert-title" dir="auto"><svg data-component="Octicon" class="octicon octicon-alert mr-2" viewbox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>Warning</p><p dir="auto">bashtest runs under <code class="notranslate">set -o pipefail</code> (and recommends the same for your test<br>
+scripts). The common idiom <code class="notranslate">printf '%s' "${output}" | grep -qE '...'</code> is a<br>
+footgun there: <code class="notranslate">grep -q</code> exits on the first match, the producing command gets<br>
+<code class="notranslate">SIGPIPE</code>, and <code class="notranslate">pipefail</code> turns that into a non-zero exit — a flaky failure on<br>
+large output. Feed the text via a here-string (<code class="notranslate">grep -qE -- '...' &lt;&lt;&lt;"${output}"</code>)<br>
+or, better, use <code class="notranslate">expect_matches</code>, which relies on bash's built-in <code class="notranslate">[[ =~ ]]</code><br>
+and spawns no subprocess at all.</p>
+</div>
+<h2 dir="auto" id="installation-and-requirements">Installation and requirements</h2>
+<p dir="auto">This repository requires bash to work (Linux, MacOs).</p>
+<h3 dir="auto" id="modulebazel">MODULE.bazel</h3>
+<p dir="auto">Check <a href="https://github.com/mboworks/bashtest/releases">Releases</a> for details. All that is needed is a <code class="notranslate">bazel_dep</code> instruction with the correct version.</p>
+<pre class="notranslate"><code class="notranslate">bazel_dep(name = "mboworks_bashtest", version = "0.0.0")
+</code></pre></main><footer>Release snapshot · 655ad0a13e39b503e1fa3937a62eef100fdda05c</footer></body></html>

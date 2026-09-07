@@ -1,0 +1,68 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CHANGELOG.md - bashtest 0.6.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.6.1/">Home</a><a href="/bashtest/site/tag/0.6.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.6.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/655ad0a13e39b503e1fa3937a62eef100fdda05c">Source</a></nav><p>bashtest 0.6.1</p><main><h1 dir="auto" id="061">0.6.1</h1>
+<ul dir="auto">
+<li>Transferred the canonical repository from <code class="notranslate">helly25/bashtest</code> to<br>
+<code class="notranslate">mboworks/bashtest</code>; future releases use the new <code class="notranslate">mboworks_bashtest</code> module<br>
+name.</li>
+<li>Added managed per-fixture scratch directories through <code class="notranslate">test_tmpdir</code>, with<br>
+configurable retention and cleanup.</li>
+</ul>
+<h1 dir="auto" id="060">0.6.0</h1>
+<ul dir="auto">
+<li>Added <code class="notranslate">skip_test "${REASON}"</code>: marks the current test as skipped and reports the reason. Use<br>
+<code class="notranslate">skip_test "reason" &amp;&amp; return</code> to end the test body.</li>
+<li>Added <code class="notranslate">--no-skip</code>, which turns every <code class="notranslate">skip_test</code> into a failure. For an environment that<br>
+GUARANTEES the capability a test probes for, where a skip means the guarantee broke.</li>
+<li>Fixed: a fatal abort inside a test no longer reports success. The <code class="notranslate">EXIT</code> trap's own last command<br>
+became the script's exit status, so a failing run could exit 0. This repository's own test suite<br>
+was dying at case 5 of 12 under <code class="notranslate">set -u</code> and still reporting PASS, hiding the seven that never<br>
+ran.</li>
+<li>Fixed: <code class="notranslate">expect_contains</code> / <code class="notranslate">expect_not_contains</code> aborted the shell when given an EMPTY array.<br>
+bash 3.2 (which macOS ships) treats <code class="notranslate">"${@}"</code> and <code class="notranslate">"${array[@]}"</code> as unbound under <code class="notranslate">set -u</code>.</li>
+</ul>
+<h1 dir="auto" id="050">0.5.0</h1>
+<ul dir="auto">
+<li>Added text-matching assertions:
+<ul dir="auto">
+<li><code class="notranslate">expect_output_contains</code> / <code class="notranslate">expect_output_not_contains</code>: literal substring checks.</li>
+<li><code class="notranslate">expect_matches</code> / <code class="notranslate">expect_not_matches</code>: extended regular expression (ERE) checks via bash's built-in <code class="notranslate">[[ =~ ]]</code> (no subprocess, so SIGPIPE-safe under <code class="notranslate">set -o pipefail</code>). <code class="notranslate">^</code>/<code class="notranslate">$</code> anchor the whole text, not individual lines.</li>
+<li><code class="notranslate">expect_pcre_matches</code> / <code class="notranslate">expect_pcre_not_matches</code>: Perl Compatible Regular Expression checks. These shell out to an external tool (<code class="notranslate">grep -P</code>, <code class="notranslate">ggrep -P</code>, <code class="notranslate">pcre2grep</code>, or <code class="notranslate">pcregrep</code>) via a here-string and fail with an actionable message when none is available.</li>
+</ul>
+</li>
+<li>Documented the <code class="notranslate">cmd | grep -q</code> SIGPIPE-under-pipefail pitfall in the README.</li>
+</ul>
+<h1 dir="auto" id="040">0.4.0</h1>
+<ul dir="auto">
+<li>Renamed the module repo to <code class="notranslate">helly25_bashtest</code> and dropped the <code class="notranslate">com_helly25_bashtest</code> alias. The <code class="notranslate">bashtest</code> macro now resolves its runtime via a repo-relative <code class="notranslate">Label</code>, so it works regardless of the apparent repo name. Consumers must update <code class="notranslate">load("@helly25_bashtest//bashtest:bashtest.bzl", "bashtest")</code> (previously <code class="notranslate">@com_helly25_bashtest</code>).</li>
+<li>Dropped legacy <code class="notranslate">WORKSPACE</code> support; the module is now bzlmod-only.</li>
+<li>Extended the BCR presubmit support matrix: added Bazel 9.x and the Linux platforms ubuntu 22.04, Debian 12, and Rocky Linux 8 (alongside the existing ubuntu 24.04 and macOS).</li>
+</ul>
+<h1 dir="auto" id="031">0.3.1</h1>
+<ul dir="auto">
+<li>Re-release of 0.3.0 (no functional changes).</li>
+</ul>
+<h1 dir="auto" id="030">0.3.0</h1>
+<ul dir="auto">
+<li>Added explicit load of <code class="notranslate">sh_library</code> (needed for bazel 9).</li>
+<li>Upgraded dependencies: bazel 9.1.1, bazel_skylib 1.8.2, platforms 1.0.0, rules_shell 0.6.1.</li>
+</ul>
+<h1 dir="auto" id="020">0.2.0</h1>
+<ul dir="auto">
+<li>Added convenient target to print <code class="notranslate">bashtest</code> help <code class="notranslate">bazel run //bashtest:bashtest_help</code> which can be used with <code class="notranslate">|pandoc -s -t man|man -l -</code>.</li>
+<li>Fixed description for flag '--test_filter'.</li>
+<li>Added '--gtest_filter' which is an actual glob based filter (as opposed to '--test_filter' which uses posix regular expressions).</li>
+<li>Correct support for space separated flag values.</li>
+</ul>
+<h1 dir="auto" id="010">0.1.0</h1>
+<ul dir="auto">
+<li>Initial version moved from helly25_mbo//testing/bashtest*</li>
+</ul></main><footer>Release snapshot · 655ad0a13e39b503e1fa3937a62eef100fdda05c</footer></body></html>

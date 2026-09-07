@@ -1,0 +1,34 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>bashtest/README.md - bashtest 0.6.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.6.1/">Home</a><a href="/bashtest/site/tag/0.6.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.6.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/655ad0a13e39b503e1fa3937a62eef100fdda05c">Source</a></nav><p>bashtest 0.6.1</p><main><h1 dir="auto" id="mboworks_bashtestbashtest">mboworks_bashtest//bashtest</h1>
+<p dir="auto">Bashtest provides <code class="notranslate">sh_test</code> wrapper that simplifies the creation of shell tests.</p>
+<ul dir="auto">
+<li>bashtest:bashtest, bashtest/bashtest.sh</li>
+<li>sh_library <code class="notranslate">bashtest.sh</code> which provides a test runner for complex shell tests involving golden files that provides built-in golden update functionality (see <code class="notranslate">bazel run //bashtest:bashtest_help</code>).
+<ul dir="auto">
+<li>status helper <code class="notranslate">test_has_error</code>: Returns whether a test function has had an expectation error. This is reset for every test function.</li>
+<li>status helper <code class="notranslate">test_has_failed_tests</code>: Returns whether a test program had previous failing test functions.</li>
+<li>expectation <code class="notranslate">expect_eq</code> "${LHS}" "${RHS}": Asserts that two strings are the same.</li>
+<li>expectation <code class="notranslate">expect_ne</code> "${LHS}" "${RHS}": Asserts that two strings are different.</li>
+<li>expectation <code class="notranslate">expect_files_eq</code> "${LHS}" "${RHS}": Asserts that two file are the same (supports golden updates).</li>
+<li>expectation <code class="notranslate">expect_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is present in an array.</li>
+<li>expectation <code class="notranslate">expect_not_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is not present in an array.</li>
+<li>expectation <code class="notranslate">expect_output_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text contains a literal substring.</li>
+<li>expectation <code class="notranslate">expect_output_not_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text does not contain a literal substring.</li>
+<li>expectation <code class="notranslate">expect_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches an extended regular expression (bash built-in; <code class="notranslate">^</code>/<code class="notranslate">$</code> anchor the whole text).</li>
+<li>expectation <code class="notranslate">expect_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match an extended regular expression.</li>
+<li>expectation <code class="notranslate">expect_pcre_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches a Perl Compatible Regular Expression (requires an external PCRE tool).</li>
+<li>expectation <code class="notranslate">expect_pcre_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match a Perl Compatible Regular Expression.</li>
+<li>special test function <code class="notranslate">test::test_init</code>: If present, then this function runs first! Tests will only be executed if it succeeds.</li>
+<li>special test function <code class="notranslate">test::test_done</code>: If present, then this function runs last!</li>
+</ul>
+</li>
+</ul></main><footer>Release snapshot · 655ad0a13e39b503e1fa3937a62eef100fdda05c</footer></body></html>
