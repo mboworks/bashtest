@@ -20,8 +20,8 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 # Resolve the bashtest runtime relative to *this* module's repository. A `Label`
 # constructed in a `.bzl` file is resolved against the repo that defines the
 # file, so the macro works no matter what apparent repo name a consumer assigns
-# it (and under both bzlmod and the legacy WORKSPACE setup). This is what lets
-# the module to work without an apparent repository-name alias.
+# it through bzlmod. This lets the module work without an apparent
+# repository-name alias.
 _BASHTEST_SH = Label("//bashtest:bashtest_sh")
 
 def bashtest(
@@ -31,7 +31,7 @@ def bashtest(
         **kwargs):
     """Bashtest wrapper.
 
-    Specialized `sh_shell` rule to simplify `bashtest` usage. The rule provides
+    Specialized `sh_test` rule to simplify `bashtest` usage. The rule provides
     the `mboworks_bashtest` environment variable that should
     be used in test scripts to source the `bashtest.sh` script as follows:
 
