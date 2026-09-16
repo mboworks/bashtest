@@ -1,6 +1,6 @@
-# bashtest.sh - A Bazel shell test runner.
+# bashtest.sh - A Bazel shell test runner. <img src="docs/assets/mboworks-logo.png" alt="MBO Works" width="64" height="64" align="right">
 
-[Release website](https://mboworks.github.io/bashtest/)
+[Release website](https://mboworks.github.io/bashtest/) · [Infrastructure and publishing](docs/infrastructure.md)
 
 This shell test library provides Bazel macro rules to simplify shell testing.
 
