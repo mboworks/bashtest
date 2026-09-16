@@ -2,20 +2,24 @@ name: Release
 on:
   push:
     tags:
-      - "*.*.*"
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
   release:
-    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@v7
+    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0
     permissions:
       attestations: write
       contents: write
       id-token: write
     with:
       release_files: bashtest-*.tar.gz
-      # Keep the GitHub release provisional until the secondary BCR
-      # publication process has completed.
-      prerelease: true
+      # action-gh-release v3 stages standard releases as drafts until all assets
+      # are uploaded, then publishes once. Immutable releases cannot be promoted
+      # from prerelease after publication.
+      prerelease: false
+      # The upstream release workflow cannot restrict saves to main. Keep its
+      # separate release build from populating tag-scoped caches.
+      mount_bazel_caches: false
 
   # Mirror the release to the Bazel Central Registry (replaces the retired
   # publish-to-bcr GitHub App). See .github/workflows/publish.yaml.

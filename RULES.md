@@ -11,3 +11,6 @@ Some rules for the code layout and its development.
   * have documentation.
 * API changes that are not backwards compatible should not occur in minor version changes.
 * Undocumented and private/internal APIs may be changed in any way at any time.
+
+Shared contributor workflow is in [AGENTS.md](AGENTS.md), branch and PR policy in
+[GIT_RULES.md](GIT_RULES.md), and shell conventions in [STYLE_SH.md](STYLE_SH.md).
