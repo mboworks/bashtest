@@ -17,6 +17,7 @@
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":tools.bzl", "bashtest_tools_test")
+load(":windows.bzl", "windows_bashtest_test")
 
 # Resolve the bashtest runtime relative to *this* module's repository. A `Label`
 # constructed in a `.bzl` file is resolved against the repo that defines the
@@ -93,11 +94,15 @@ def bashtest(
         "mboworks_bashtest": "$(rlocationpath {label})".format(label = _BASHTEST_SH),
         "_BASHTEST_SCRIPT": "$(rlocationpath {label})".format(label = ":" + script),
     }
-    runner_name = name + "__bashtest_runner" if tools else name
+    runner_name = name + "__bashtest_runner"
     runner_kwargs = dict(kwargs)
-    if tools:
-        runner_kwargs["tags"] = kwargs.get("tags", []) + ["manual"]
-        runner_kwargs["visibility"] = ["//visibility:private"]
+    runner_kwargs["tags"] = kwargs.get("tags", []) + ["manual"]
+    runner_kwargs["visibility"] = ["//visibility:private"]
+    compatibility = kwargs.get("target_compatible_with", [])
+    runner_kwargs["target_compatible_with"] = compatibility + select({
+        str(Label("//bashtest:windows")): ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
     sh_test(
         name = runner_name,
         srcs = [_LAUNCHER],
@@ -106,19 +111,31 @@ def bashtest(
         env = env | extra_env,
         **runner_kwargs
     )
-    if tools:
-        outer_kwargs = dict(kwargs)
-
-        # These are sh_test attributes, rather than common test attributes.
-        outer_kwargs.pop("use_bash_launcher", None)
-        tool_names = {}
-        for variable, label in tools.items():
-            tool_names.setdefault(label, []).append(variable)
-        bashtest_tools_test(
-            name = name,
-            runner = ":" + runner_name,
-            env = env | extra_env,
-            tools = {label: json.encode(names) for label, names in tool_names.items()},
-            data = data + [":" + script, _BASHTEST_SH],
-            **outer_kwargs
-        )
+    runner_kwargs.pop("use_bash_launcher", None)
+    runner_kwargs["target_compatible_with"] = compatibility + select({
+        str(Label("//bashtest:windows")): ["@platforms//cpu:x86_64"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    })
+    windows_bashtest_test(
+        name = runner_name + "_windows",
+        deps = deps + [_BASHTEST_SH, _RUNFILES],
+        data = data + [":" + script, _BASHTEST_SH],
+        env = env | extra_env,
+        **runner_kwargs
+    )
+    outer_kwargs = dict(kwargs)
+    outer_kwargs.pop("use_bash_launcher", None)
+    tool_names = {}
+    for variable, label in tools.items():
+        tool_names.setdefault(label, []).append(variable)
+    bashtest_tools_test(
+        name = name,
+        runner = select({
+            str(Label("//bashtest:windows")): ":" + runner_name + "_windows",
+            "//conditions:default": ":" + runner_name,
+        }),
+        env = env | extra_env,
+        tools = {label: json.encode(names) for label, names in tool_names.items()},
+        data = data + [":" + script, _BASHTEST_SH],
+        **outer_kwargs
+    )

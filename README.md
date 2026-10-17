@@ -88,12 +88,16 @@ hand-rolled pipelines.
 
 ## Installation and requirements
 
-This repository requires Bash and Unix utilities (`coreutils`, `diff`, `sed`, and
-`grep`) on Linux, macOS, or Windows. Windows uses native Bazel with MSYS2 Bash;
-it does not require WSL. Set `BAZEL_SH` to the Bash executable, for example
-`C:/msys64/usr/bin/bash.exe`, and put `C:/msys64/usr/bin` on `PATH`. Install the
-MSYS2 packages `bash coreutils diffutils grep sed`. PCRE assertions additionally
-need a supported PCRE tool, such as a `grep` with `-P` support.
+Linux and macOS require Bash and Unix utilities (`coreutils`, `diff`, `sed`, and
+`grep`); PCRE assertions need a supported PCRE tool.
+
+On Windows x86-64, `bashtest` automatically downloads a pinned MSYS2 runtime,
+including Bash, coreutils, diffutils, grep with PCRE support, sed, and their DLLs.
+No MSYS2 installation, `BAZEL_SH`, or manual `PATH` setup is needed for bashtest
+rules. The runtime is private to Bazel and does not install or update system
+software. Other shell rules and `genrule` actions retain their own requirements.
+The first Windows build needs network access; subsequent builds can use Bazel's
+repository cache. See [runtime details](bashtest/runtime/README.md).
 
 Run Bazel from PowerShell or Command Prompt on Windows. When invoking it from
 MSYS2 or Git Bash, set `MSYS_NO_PATHCONV=1` to preserve Bazel labels such as `//...`.

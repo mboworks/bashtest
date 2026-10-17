@@ -68,7 +68,7 @@ def _tools_test_impl(ctx):
     return [
         DefaultInfo(executable = executable, runfiles = runfiles),
         RunEnvironmentInfo(
-            environment = environment.environment | {"_BASHTEST_TOOLS_MANIFEST": _rlocation_path(ctx, manifest)},
+            environment = environment.environment | ({"_BASHTEST_TOOLS_MANIFEST": _rlocation_path(ctx, manifest)} if ctx.attr.tools else {}),
             inherited_environment = environment.inherited_environment,
         ),
         coverage_common.instrumented_files_info(ctx, dependency_attributes = ["runner"]),
