@@ -26,3 +26,29 @@ Bashtest provides `sh_test` wrapper that simplifies the creation of shell tests.
 The macro supports directory and manifest-only runfiles on Linux, macOS, and
 Windows with MSYS2 Bash. See the root [installation requirements](../README.md#installation-and-requirements)
 for Windows setup and resolving data dependencies with `rlocation`.
+
+## Executable tools
+
+Use `tools` to build helper executables for the test execution platform and export
+resolved paths automatically:
+
+```starlark
+bashtest(
+    name = "generator_test",
+    srcs = ["generator_test.sh"],
+    tools = {"GENERATOR": "//tools:generator"},
+)
+```
+
+The script can invoke `"${GENERATOR}" --output "${TEST_TMPDIR}/result"`.
+Tools must be executable Bazel targets; their runtime runfiles are included.
+This uses the test execution group, including `exec_group_compatible_with` on Bazel 8 and newer, so
+cross-compilation builds helpers for the platform running the test. `data`
+continues to use the target configuration. Do not put the same target in both
+`data` and `tools`. Multiple names may refer to the same tool.
+
+Keys must be shell environment variable names and must not conflict with `env`
+or `env_inherit`. Names beginning with `_BASHTEST`, `TEST_`, `RUNFILES_`, or `BASH`,
+and `mboworks_bashtest`, `PATH`, `IFS`, `SHELLOPTS`, `ENV`, `EUID`, `UID`, and
+`PPID` are reserved. Quote exported paths when invoking tools, including on
+Windows. No `$(location ...)` expansion is needed for tool paths.

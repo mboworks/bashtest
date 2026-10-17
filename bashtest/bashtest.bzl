@@ -16,6 +16,7 @@
 """mboworks_bashtest/bashtest:bashtest"""
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":tools.bzl", "bashtest_tools_test")
 
 # Resolve the bashtest runtime relative to *this* module's repository. A `Label`
 # constructed in a `.bzl` file is resolved against the repo that defines the
@@ -32,6 +33,7 @@ def bashtest(
         env = {},
         srcs = [],
         data = [],
+        tools = {},
         **kwargs):
     """Bashtest wrapper.
 
@@ -74,6 +76,7 @@ def bashtest(
         data:      Runtime files made available through Bazel runfiles.
         deps:      Dependencies which will have bashtest_sh automatically added.
         env:       Environment name that automatically adds `mboworks_bashtest`.
+        tools:     Environment variable names mapped to executable targets built for test execution.
         **kwargs:  All other attributes are passed through as is.
     """
 
@@ -90,11 +93,32 @@ def bashtest(
         "mboworks_bashtest": "$(rlocationpath {label})".format(label = _BASHTEST_SH),
         "_BASHTEST_SCRIPT": "$(rlocationpath {label})".format(label = ":" + script),
     }
+    runner_name = name + "__bashtest_runner" if tools else name
+    runner_kwargs = dict(kwargs)
+    if tools:
+        runner_kwargs["tags"] = kwargs.get("tags", []) + ["manual"]
+        runner_kwargs["visibility"] = ["//visibility:private"]
     sh_test(
-        name = name,
+        name = runner_name,
         srcs = [_LAUNCHER],
         deps = deps + [_BASHTEST_SH, _RUNFILES],
         data = data + [":" + script, _BASHTEST_SH],
         env = env | extra_env,
-        **kwargs
+        **runner_kwargs
     )
+    if tools:
+        outer_kwargs = dict(kwargs)
+
+        # These are sh_test attributes, rather than common test attributes.
+        outer_kwargs.pop("use_bash_launcher", None)
+        tool_names = {}
+        for variable, label in tools.items():
+            tool_names.setdefault(label, []).append(variable)
+        bashtest_tools_test(
+            name = name,
+            runner = ":" + runner_name,
+            env = env | extra_env,
+            tools = {label: json.encode(names) for label, names in tool_names.items()},
+            data = data + [":" + script, _BASHTEST_SH],
+            **outer_kwargs
+        )

@@ -13,7 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bashtest:bashtest.bzl", "bashtest")
+load(":tool_fixture.bzl", "configuration_data", "tool_source")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -53,4 +55,29 @@ bashtest(
 bashtest(
     name = "files_test",
     srcs = ["files_test.sh"],
+)
+
+configuration_data(name = "tool_data")
+
+configuration_data(name = "target_data")
+
+tool_source(
+    name = "helper_source",
+    data = ":tool_data",
+)
+
+sh_binary(
+    name = "helper",
+    srcs = [":helper_source"],
+)
+
+bashtest(
+    name = "tools_test",
+    srcs = ["tools_test.sh"],
+    data = [":target_data"],
+    env = {"TARGET_DATA": "$(rlocationpath :target_data)"},
+    tools = {
+        "HELPER": ":helper",
+        "HELPER_ALIAS": ":helper",
+    },
 )
