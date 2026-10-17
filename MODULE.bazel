@@ -17,9 +17,15 @@
 
 module(
     name = "mboworks_bashtest",
-    version = "0.6.2",
+    version = "0.7.0",
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_shell", version = "0.8.0")
+
+windows_runtime = use_repo_rule("//bashtest/runtime:repositories.bzl", "windows_runtime")
+
+windows_runtime(name = "bashtest_windows_runtime")
+
+register_toolchains("//bashtest/runtime:windows_toolchain")

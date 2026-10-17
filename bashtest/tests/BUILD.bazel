@@ -100,3 +100,12 @@ bashtest(
         "SECOND_HELPER": ":second_helper",
     },
 )
+
+bashtest(
+    name = "runtime_test",
+    srcs = ["runtime_test.sh"],
+    target_compatible_with = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+)

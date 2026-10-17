@@ -34,7 +34,7 @@ cd "${root}/consumer with spaces"
 cp "${repo}/.bazelversion" .bazelversion
 cat > MODULE.bazel <<EOF
 module(name = "consumer")
-bazel_dep(name = "mboworks_bashtest", version = "0.6.2", repo_name = "framework")
+bazel_dep(name = "mboworks_bashtest", version = "0.7.0", repo_name = "framework")
 local_path_override(module_name = "mboworks_bashtest", path = "${repo}")
 EOF
 cat > BUILD.bazel <<'EOF'
@@ -65,9 +65,15 @@ bazel test --enable_runfiles=no --test_output=errors //:consumer_test
 bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
 
 # Exercise both documented update spellings with a workspace path containing spaces.
+# Separate MSYS2 installations have different /tmp mounts. Cross the native
+# Bazel boundary with a Windows path that identifies the same directory in both.
+workspace="${PWD}"
+case "${OSTYPE}" in
+    msys*|cygwin*) workspace="$(cygpath -am "${workspace}")" ;;
+esac
 printf 'stale\n' > golden.txt
-bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${PWD}" --keep-tmpdir=never
+bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]
 printf 'stale again\n' > golden.txt
-bazel run --enable_runfiles=no //:consumer_test -- -u="${PWD}" --keep-tmpdir=never
+bazel run --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]

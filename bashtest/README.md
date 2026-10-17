@@ -24,7 +24,7 @@ Bashtest provides `sh_test` wrapper that simplifies the creation of shell tests.
     * special test function `test::test_done`: If present, then this function runs last!
 
 The macro supports directory and manifest-only runfiles on Linux, macOS, and
-Windows with MSYS2 Bash. See the root [installation requirements](../README.md#installation-and-requirements)
+Windows x86-64 with an automatically provisioned MSYS2 runtime. See the root [installation requirements](../README.md#installation-and-requirements)
 for Windows setup and resolving data dependencies with `rlocation`.
 
 ## Executable tools

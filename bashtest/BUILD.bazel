@@ -23,6 +23,7 @@ bzl_library(
     srcs = [
         "bashtest.bzl",
         "tools.bzl",
+        "windows.bzl",
     ],
 )
 
@@ -63,3 +64,9 @@ genrule(
 )
 
 exports_files(["launcher.sh"])
+
+config_setting(
+    name = "windows",
+    constraint_values = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)

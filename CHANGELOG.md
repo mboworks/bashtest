@@ -1,4 +1,7 @@
-# 0.6.2
+# 0.7.0
+
+* Automatically provision Bash and Unix utilities, including PCRE support, for
+  bashtest on Windows x86-64 without system installation or PATH configuration.
 
 * Added named `tools` mappings that build executables for the test execution
   platform and export their resolved paths with their runtime runfiles.
