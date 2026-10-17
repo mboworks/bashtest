@@ -18,7 +18,9 @@
 def _path(ctx, file):
     return file.short_path[3:] if file.short_path.startswith("../") else ctx.workspace_name + "/" + file.short_path
 
-def _windows_test_impl(ctx):
+def _windows_launcher_impl(ctx):
+    if not ctx.target_platform_has_constraint(ctx.attr._x86_64[platform_common.ConstraintValueInfo]):
+        fail("The managed Windows runtime requires x86-64")
     executable = ctx.actions.declare_file(ctx.label.name + ".exe")
     info = ctx.actions.args().use_param_file("%s", use_always = True).set_param_file_format("multiline")
     info.add("binary_type=Bash")
@@ -42,25 +44,20 @@ def _windows_test_impl(ctx):
         runfiles = runfiles.merge(ctx.runfiles(transitive_files = default.files)).merge(default.default_runfiles)
     return [
         DefaultInfo(executable = executable, runfiles = runfiles),
-        RunEnvironmentInfo(
-            environment = {key: ctx.expand_make_variables("env", ctx.expand_location(value, ctx.attr.data), {}) for key, value in ctx.attr.env.items()},
-            inherited_environment = ctx.attr.env_inherit,
-        ),
         coverage_common.instrumented_files_info(ctx, dependency_attributes = ["data", "deps"]),
     ]
 
-windows_bashtest_test = rule(
-    implementation = _windows_test_impl,
-    test = True,
+windows_launcher_binary = rule(
+    implementation = _windows_launcher_impl,
+    executable = True,
     attrs = {
         "data": attr.label_list(allow_files = True),
         "deps": attr.label_list(),
-        "env": attr.string_dict(),
-        "env_inherit": attr.string_list(),
         "_bash": attr.label(default = "@bashtest_windows_runtime//:usr/bin/bash.exe", allow_single_file = True),
         "_launcher": attr.label(default = "//bashtest:launcher.sh", allow_single_file = True),
         "_launcher_maker": attr.label(default = "@bazel_tools//tools/launcher:launcher_maker", executable = True, cfg = "exec"),
         "_native_launcher": attr.label(default = "@bazel_tools//tools/launcher:launcher", executable = True, cfg = "target"),
         "_runtime": attr.label(default = "@bashtest_windows_runtime//:runtime"),
+        "_x86_64": attr.label(default = "@platforms//cpu:x86_64"),
     },
 )

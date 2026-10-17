@@ -27,6 +27,8 @@ test::executable_and_runfiles() {
     expect_eq 'default' "$(cat "$(rlocation "${TARGET_DATA}")")"
     # shellcheck disable=SC2154
     expect_eq "${HELPER}" "${HELPER_ALIAS}"
+    # shellcheck disable=SC2154
+    expect_eq 'default' "$(cat "${TARGET_LOCATION}")"
     # Distinct executables must both be available in this single test invocation.
     # shellcheck disable=SC2154
     expect_ne "${HELPER}" "${SECOND_HELPER}"

@@ -90,7 +90,10 @@ bashtest(
     name = "tools_test",
     srcs = ["tools_test.sh"],
     data = [":target_data"],
-    env = {"TARGET_DATA": "$(rlocationpath :target_data)"},
+    env = {
+        "TARGET_DATA": "$(rlocationpath :target_data)",
+        "TARGET_LOCATION": "$(location :target_data)",
+    },
     tools = {
         "HELPER": ":helper",
         "HELPER_ALIAS": ":helper",
