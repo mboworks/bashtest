@@ -13,7 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Configuration-sensitive fixtures for executable helper tests."""
+"""Test-only configuration fixtures; not part of bashtest's public API."""
+
+visibility("private")
 
 def _path(ctx, file):
     return file.short_path[3:] if file.short_path.startswith("../") else ctx.workspace_name + "/" + file.short_path
