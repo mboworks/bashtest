@@ -53,11 +53,16 @@ jobs:
     needs: pre-commit
     strategy:
       matrix:
-        # If `Windows` support is removed - state so inthe README.md
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v7
+    - name: Configure Windows Bash and Unix utilities
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        "BAZEL_SH=C:/msys64/usr/bin/bash.exe" >> $env:GITHUB_ENV
+        "C:/msys64/usr/bin" >> $env:GITHUB_PATH
     - uses: bazel-contrib/setup-bazel@0.19.0
       with:
         cache-save: ${{ github.ref == 'refs/heads/main' }}
@@ -67,8 +72,17 @@ jobs:
         # Share repository cache between workflows.
         repository-cache: true
     - name: Built & Test
+      shell: bash
+      env:
+        MSYS_NO_PATHCONV: "1"
       run: |
         bazel test //...
+        bazel test --enable_runfiles=no //...
+    - name: Test external module consumer
+      env:
+        MSYS_NO_PATHCONV: "1"
+      shell: bash
+      run: bash bashtest/tests/external_consumer_test.sh
 
   done:
     permissions:

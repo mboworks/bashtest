@@ -1,5 +1,11 @@
 # 0.6.2
 
+* Added Windows support with MSYS2 Bash using rules_shell runfiles resolution.
+* Preserved the existing source API while supporting manifest-only runfiles and
+  renamed external module dependencies.
+* Fixed golden-file diagnostics and updates for manifest paths and filenames
+  containing spaces or regular-expression characters.
+
 - Fetch shallow publication snapshots and report complete site size with a 250 MB advisory budget.
 
 # 0.6.1

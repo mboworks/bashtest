@@ -9,6 +9,7 @@ matrix:
   - debian12
   - rockylinux8
   - macos_arm64
+  - windows
 tasks:
   verify_targets:
     name: Verify build targets
@@ -16,3 +17,5 @@ tasks:
     bazel: ${{ bazel }}
     build_targets:
       - '@mboworks_bashtest//bashtest/...'
+    test_targets:
+      - '@mboworks_bashtest//bashtest/tests/...'

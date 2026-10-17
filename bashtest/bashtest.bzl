@@ -23,11 +23,15 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 # it through bzlmod. This lets the module work without an apparent
 # repository-name alias.
 _BASHTEST_SH = Label("//bashtest:bashtest_sh")
+_LAUNCHER = Label("//bashtest:launcher.sh")
+_RUNFILES = Label("@rules_shell//shell/runfiles")
 
 def bashtest(
         name,
         deps = [],
         env = {},
+        srcs = [],
+        data = [],
         **kwargs):
     """Bashtest wrapper.
 
@@ -66,17 +70,31 @@ def bashtest(
 
     Args:
         name:      Name of the test rule. Should end in `_test`
+        srcs:      Exactly one Bash test script.
+        data:      Runtime files made available through Bazel runfiles.
         deps:      Dependencies which will have bashtest_sh automatically added.
         env:       Environment name that automatically adds `mboworks_bashtest`.
         **kwargs:  All other attributes are passed through as is.
     """
 
+    # Keep configurable srcs working; rlocationpath validates that the selected
+    # filegroup expands to exactly one file during analysis.
+    script = name + "__bashtest_script"
+    native.filegroup(
+        name = script,
+        srcs = srcs,
+        testonly = True,
+        visibility = ["//visibility:private"],
+    )
     extra_env = {
-        "mboworks_bashtest": "$(rootpath {label})".format(label = _BASHTEST_SH),
+        "mboworks_bashtest": "$(rlocationpath {label})".format(label = _BASHTEST_SH),
+        "_BASHTEST_SCRIPT": "$(rlocationpath {label})".format(label = ":" + script),
     }
     sh_test(
         name = name,
-        deps = deps + [_BASHTEST_SH],
+        srcs = [_LAUNCHER],
+        deps = deps + [_BASHTEST_SH, _RUNFILES],
+        data = data + [":" + script, _BASHTEST_SH],
         env = env | extra_env,
         **kwargs
     )

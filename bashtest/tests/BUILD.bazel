@@ -42,3 +42,15 @@ bashtest(
     srcs = ["bashtest_no_skip_test.sh"],
     args = ["--no-skip"],
 )
+
+bashtest(
+    name = "launcher_test",
+    srcs = ["launcher_test.sh"],
+    data = ["//bashtest:launcher.sh"],
+    env = {"LAUNCHER_RUNFILE": "$(rlocationpath //bashtest:launcher.sh)"},
+)
+
+bashtest(
+    name = "files_test",
+    srcs = ["files_test.sh"],
+)

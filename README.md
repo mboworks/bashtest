@@ -88,7 +88,28 @@ hand-rolled pipelines.
 
 ## Installation and requirements
 
-This repository requires bash to work (Linux, MacOs).
+This repository requires Bash and Unix utilities (`coreutils`, `diff`, `sed`, and
+`grep`) on Linux, macOS, or Windows. Windows uses native Bazel with MSYS2 Bash;
+it does not require WSL. Set `BAZEL_SH` to the Bash executable, for example
+`C:/msys64/usr/bin/bash.exe`, and put `C:/msys64/usr/bin` on `PATH`. Install the
+MSYS2 packages `bash coreutils diffutils grep sed`. PCRE assertions additionally
+need a supported PCRE tool, such as a `grep` with `-P` support.
+
+Run Bazel from PowerShell or Command Prompt on Windows. When invoking it from
+MSYS2 or Git Bash, set `MSYS_NO_PATHCONV=1` to preserve Bazel labels such as `//...`.
+Keep shell scripts checked out with LF line endings.
+
+The `bashtest` macro resolves its framework and test script through rules_shell's
+runfiles library, including manifest-only runfiles on Windows. Existing tests
+continue to use `source "${mboworks_bashtest}"`. The launcher also makes `rlocation`
+available for declared `data` dependencies: pass `$(rlocationpath :file)` through
+an `env` entry, then resolve it with `rlocation` in the script. This also works
+when consumers rename the module with `repo_name`.
+
+Golden updates use the test workspace's logical runfile paths. Pass an explicit
+workspace root with `--update-golden` and use `rlocation` to find golden files;
+manifest-only execution does not require a runfiles symlink tree. File comparison
+remains byte-for-byte, so CRLF and LF golden files are intentionally different.
 
 ### MODULE.bazel
 
