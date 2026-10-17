@@ -30,10 +30,10 @@ def _validate_name(name):
 def _tools_test_impl(ctx):
     runner = ctx.attr.runner[DefaultInfo]
 
-    # Bazel 7 uses native sh_test, which does not expose RunEnvironmentInfo.
-    environment = ctx.attr.runner[RunEnvironmentInfo] if RunEnvironmentInfo in ctx.attr.runner else RunEnvironmentInfo(
+    # sh_test interprets location(s) in env as rootpath(s), relative to runfiles.
+    environment = RunEnvironmentInfo(
         environment = {
-            key: ctx.expand_make_variables("env", ctx.expand_location(value, ctx.attr.data), {})
+            key: ctx.expand_make_variables("env", ctx.expand_location(value.replace("$(location ", "$(rootpath ").replace("$(locations ", "$(rootpaths "), ctx.attr.data), {})
             for key, value in ctx.attr.env.items()
         },
         inherited_environment = ctx.attr.env_inherit,

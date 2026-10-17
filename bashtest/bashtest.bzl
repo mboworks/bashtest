@@ -15,6 +15,7 @@
 
 """mboworks_bashtest/bashtest:bashtest"""
 
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":tools.bzl", "bashtest_tools_test")
 
@@ -93,32 +94,41 @@ def bashtest(
         "mboworks_bashtest": "$(rlocationpath {label})".format(label = _BASHTEST_SH),
         "_BASHTEST_SCRIPT": "$(rlocationpath {label})".format(label = ":" + script),
     }
-    runner_name = name + "__bashtest_runner" if tools else name
-    runner_kwargs = dict(kwargs)
-    if tools:
-        runner_kwargs["tags"] = kwargs.get("tags", []) + ["manual"]
-        runner_kwargs["visibility"] = ["//visibility:private"]
-    sh_test(
+    if not tools:
+        sh_test(
+            name = name,
+            srcs = [_LAUNCHER],
+            deps = deps + [_BASHTEST_SH, _RUNFILES],
+            data = data + [":" + script, _BASHTEST_SH],
+            env = env | extra_env,
+            **kwargs
+        )
+        return
+
+    # Define an executable launcher, not another test. The single test below
+    # owns both this executable and every execution-platform tool dependency.
+    runner_name = name + "__bashtest_launcher"
+    launcher_kwargs = dict(kwargs)
+    for attribute in ["args", "env_inherit", "size", "timeout", "flaky", "shard_count", "local", "exec_group_compatible_with"]:
+        launcher_kwargs.pop(attribute, None)
+    launcher_kwargs["testonly"] = True
+    sh_binary(
         name = runner_name,
         srcs = [_LAUNCHER],
         deps = deps + [_BASHTEST_SH, _RUNFILES],
         data = data + [":" + script, _BASHTEST_SH],
-        env = env | extra_env,
-        **runner_kwargs
+        **launcher_kwargs
     )
-    if tools:
-        outer_kwargs = dict(kwargs)
-
-        # These are sh_test attributes, rather than common test attributes.
-        outer_kwargs.pop("use_bash_launcher", None)
-        tool_names = {}
-        for variable, label in tools.items():
-            tool_names.setdefault(label, []).append(variable)
-        bashtest_tools_test(
-            name = name,
-            runner = ":" + runner_name,
-            env = env | extra_env,
-            tools = {label: json.encode(names) for label, names in tool_names.items()},
-            data = data + [":" + script, _BASHTEST_SH],
-            **outer_kwargs
-        )
+    outer_kwargs = dict(kwargs)
+    outer_kwargs.pop("use_bash_launcher", None)
+    tool_names = {}
+    for variable, label in tools.items():
+        tool_names.setdefault(label, []).append(variable)
+    bashtest_tools_test(
+        name = name,
+        runner = ":" + runner_name,
+        env = env | extra_env,
+        tools = {label: json.encode(names) for label, names in tool_names.items()},
+        data = data + [":" + script, _BASHTEST_SH],
+        **outer_kwargs
+    )
