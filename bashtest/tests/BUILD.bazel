@@ -71,6 +71,21 @@ sh_binary(
     srcs = [":helper_source"],
 )
 
+configuration_data(
+    name = "second_tool_data",
+    platform_marker = "second-tool",
+)
+
+tool_source(
+    name = "second_helper_source",
+    data = ":second_tool_data",
+)
+
+sh_binary(
+    name = "second_helper",
+    srcs = [":second_helper_source"],
+)
+
 bashtest(
     name = "tools_test",
     srcs = ["tools_test.sh"],
@@ -79,6 +94,7 @@ bashtest(
     tools = {
         "HELPER": ":helper",
         "HELPER_ALIAS": ":helper",
+        "SECOND_HELPER": ":second_helper",
     },
 )
 

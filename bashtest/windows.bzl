@@ -23,7 +23,10 @@ def _windows_test_impl(ctx):
     info = ctx.actions.args().use_param_file("%s", use_always = True).set_param_file_format("multiline")
     info.add("binary_type=Bash")
     info.add(ctx.workspace_name, format = "workspace_name=%s")
-    info.add("1" if ctx.configuration.runfiles_enabled() else "0", format = "symlink_runfiles_enabled=%s")
+
+    # Bazel emits a manifest even when runfiles trees are enabled. Prefer it
+    # without relying on rules_shell-only configuration APIs.
+    info.add("symlink_runfiles_enabled=0")
     info.add(_path(ctx, ctx.file._bash), format = "bash_bin_path=%s")
     info.add(_path(ctx, ctx.file._launcher), format = "bash_file_rlocationpath=%s")
     ctx.actions.run(

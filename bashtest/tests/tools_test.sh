@@ -27,6 +27,10 @@ test::executable_and_runfiles() {
     expect_eq 'default' "$(cat "$(rlocation "${TARGET_DATA}")")"
     # shellcheck disable=SC2154
     expect_eq "${HELPER}" "${HELPER_ALIAS}"
+    # Distinct executables must both be available in this single test invocation.
+    # shellcheck disable=SC2154
+    expect_ne "${HELPER}" "${SECOND_HELPER}"
+    expect_eq $'second-tool\nsecond argument' "$("${SECOND_HELPER}" 'second argument')"
     case "${OSTYPE}" in
         msys*|cygwin*) expect_matches '[.]exe$' "${HELPER}" ;;
     esac
