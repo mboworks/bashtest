@@ -18,6 +18,8 @@
 # Integration test: distinct default and test execution platforms, external module.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The override consumes this checkout, including unreleased development versions.
+version="$(sed -nE 's/.*version = "([^"]+)".*/\1/p' "${repo}/MODULE.bazel" | head -n1)"
 root="$(mktemp -d)"
 cleanup() {
     bazel shutdown >/dev/null 2>&1 || true
@@ -34,7 +36,7 @@ cp "${repo}/.bazelversion" .bazelversion
 cp "${repo}/bashtest/tests/tool_fixture.bzl" tool_fixture.bzl
 cat > MODULE.bazel <<EOF
 module(name = "tools_consumer")
-bazel_dep(name = "mboworks_bashtest", version = "0.7.1", repo_name = "framework")
+bazel_dep(name = "mboworks_bashtest", version = "${version}", repo_name = "framework")
 local_path_override(module_name = "mboworks_bashtest", path = "${repo}")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "platforms", version = "1.1.0")

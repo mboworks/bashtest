@@ -49,9 +49,9 @@ repos:
   - id: compare-versions
     name: compare-versions
     description: |
-      Require matching MODULE.bazel, CHANGELOG.md, README.md, and consumer fixture
-      versions. After a release, the first later commit must advance the development
-      version beyond the latest release tag.
+      Require matching MODULE.bazel and CHANGELOG.md development versions, and a
+      released or release-prepared README example. After a release, the first later
+      commit must advance the development version beyond the latest release tag.
     language: system
     entry: .pre-commit/check_version.sh
     pass_filenames: False

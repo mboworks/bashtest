@@ -1,7 +1,8 @@
 # 0.7.1
 
-* Check that the README and consumer fixtures match the module version, with
-  regression tests for version consistency and post-release version bumps.
+* Derive consumer fixture versions from the module and automate the README
+  version update during release preparation. Test development/release version
+  consistency and post-release version bumps.
 
 * Fixed the tools test's path expectation when bashtest is an external module.
 * Run the framework test suite as an external dependency in CI to catch

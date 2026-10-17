@@ -65,14 +65,25 @@ links and mappings before publication.
 
 ## Version consistency
 
-`MODULE.bazel` identifies the checkout's development version. The `compare-versions`
-pre-commit hook checks it against the first `CHANGELOG.md` heading, the README's
-Bazel dependency example, and both external consumer fixtures. Update all five
-references together. Historical changelog entries retain their original versions;
-release assets and BCR templates derive their versions during publication.
+`MODULE.bazel` and the first `CHANGELOG.md` heading identify the development
+version. Both external consumer scripts derive their dependency version from
+`MODULE.bazel`, because their local overrides consume this checkout. Historical
+changelog entries retain their original versions.
 
-The released commit may keep its release version. The first subsequent commit must
-advance beyond the latest numeric release tag. `tools/version_test.py` exercises
-mismatched and missing references, invalid versions, numeric tag ordering, and this
-post-release transition in temporary Git repositories. These tests run through the
-infrastructure pre-commit hook and CI.
+The README installation example stays at the latest released version during
+development. Before a release, run `python3 tools/prepare_release.py X.Y.Z` on a
+release-preparation branch. It verifies the module/changelog version and updates
+the README automatically. Review and merge that change before tagging. This brief
+preparation stage is the only time the example should name an upcoming release.
+Both `tools/trigger_release.sh` (including dry runs) and the archive workflow require
+`prepare_release.py --check` to pass, so the tag, archive README, module, and
+release notes agree. BCR metadata and release assets already derive their version
+from the release tag. Preparation does not commit, tag, or publish anything.
+
+The `compare-versions` pre-commit hook accepts the latest numeric release tag for
+the README, or the development version for a prepared release. Without local tags,
+it can only validate the README's format and upper bound; CI fetches all tags.
+The released commit may keep its release version; the first subsequent commit
+must advance the development version. `tools/version_test.py` exercises these
+relationships and release preparation in temporary Git repositories. These tests
+run through the infrastructure pre-commit hook and CI.

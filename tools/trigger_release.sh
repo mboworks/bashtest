@@ -24,7 +24,7 @@ for arg in "${@}"; do
 done
 [[ -n "${VERSION}" ]] || die "Usage: ${0} [--dry-run] <version>"
 
-for tool in gh git gpg; do
+for tool in gh git gpg python3; do
     command -v "${tool}" >/dev/null 2>&1 || die "Required tool '${tool}' is not installed."
 done
 
@@ -39,6 +39,9 @@ CHANGELOG_VERSION="$(sed -rne 's,^# ([0-9]+([.][0-9]+)+.*)$,\1,p' CHANGELOG.md |
 [[ "${VERSION}" == "${BAZELMOD_VERSION}" ]] || die "Requested version (${VERSION}) != repository version (${BAZELMOD_VERSION})."
 [[ -z "$(git tag --list "${VERSION}")" ]] || die "Tag '${VERSION}' already exists."
 gh release view "${VERSION}" >/dev/null 2>&1 && die "Release '${VERSION}' already exists."
+
+# All tracked release references must already be reviewed and committed.
+python3 tools/prepare_release.py --check "${VERSION}"
 
 if [[ "${DRY_RUN}" == true ]]; then
     echo "[dry-run] Would create and push signed tag '${VERSION}' at $(git rev-parse HEAD)."
