@@ -4,7 +4,8 @@
 * Preserved the existing source API while supporting manifest-only runfiles and
   renamed external module dependencies.
 * Fixed golden-file diagnostics and updates for manifest paths and filenames
-  containing spaces or regular-expression characters.
+  containing spaces or regular-expression characters. Tool errors do not update
+  golden files, and short options preserve spaces in their values.
 
 - Fetch shallow publication snapshots and report complete site size with a 250 MB advisory budget.
 

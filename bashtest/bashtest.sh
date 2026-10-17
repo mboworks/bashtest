@@ -210,7 +210,7 @@ while getopts -- '-:f:hu:v' OPTION; do
         fi
     else
         OPTARG="${OPTARG:-}"
-        OPTARG="${OPTARG//[= ]}"
+        OPTARG="${OPTARG#=}"
         OPTERR="-${OPTION}"
     fi
     case "${OPTION}" in

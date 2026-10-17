@@ -19,7 +19,13 @@
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 root="$(mktemp -d)"
-trap 'rm -rf "${root}"' EXIT
+cleanup() {
+    # Windows cannot remove a directory while it is a process working directory.
+    bazel shutdown >/dev/null 2>&1 || true
+    cd "${repo}"
+    rm -rf "${root}"
+}
+trap cleanup EXIT
 case "${OSTYPE}" in
     msys*|cygwin*) repo="$(cygpath -m "${repo}")" ;;
 esac
@@ -57,3 +63,11 @@ test_runner
 EOF
 bazel test --enable_runfiles=no --test_output=errors //:consumer_test
 bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
+
+# Exercise both documented update spellings with a workspace path containing spaces.
+printf 'stale\n' > golden.txt
+bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${PWD}" --keep-tmpdir=never
+[[ "$(cat golden.txt)" == 'hello world' ]]
+printf 'stale again\n' > golden.txt
+bazel run --enable_runfiles=no //:consumer_test -- -u="${PWD}" --keep-tmpdir=never
+[[ "$(cat golden.txt)" == 'hello world' ]]
