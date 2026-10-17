@@ -27,7 +27,14 @@ source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d'
 source "$0.runfiles/$f" 2>/dev/null ||
 source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null ||
 source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null ||
-{ echo >&2 "ERROR: cannot find $f"; exit 1; }
+{
+    echo >&2 "ERROR: cannot find $f"
+    printf >&2 'Bash: %s\nPATH: %s\nRunfiles directory: %s\nRunfiles manifest: %s\n' \
+        "${BASH}" "${PATH}" "${RUNFILES_DIR:-}" "${RUNFILES_MANIFEST_FILE:-}"
+    command -v grep cut >&2
+    grep -m1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" >&2
+    exit 1
+}
 set -e
 
 # The macro supplies canonical rlocation paths, independent of the consumer's
