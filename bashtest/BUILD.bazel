@@ -58,3 +58,5 @@ genrule(
     tags = ["manual"],
     visibility = ["//visibility:private"],
 )
+
+exports_files(["launcher.sh"])

@@ -22,3 +22,7 @@ Bashtest provides `sh_test` wrapper that simplifies the creation of shell tests.
     * control `skip_test` "\${REASON}": Marks the current test as skipped and reports the reason. Use `skip_test "reason" && return` to end the test body.
     * special test function `test::test_init`: If present, then this function runs first! Tests will only be executed if it succeeds.
     * special test function `test::test_done`: If present, then this function runs last!
+
+The macro supports directory and manifest-only runfiles on Linux, macOS, and
+Windows with MSYS2 Bash. See the root [installation requirements](../README.md#installation-and-requirements)
+for Windows setup and resolving data dependencies with `rlocation`.

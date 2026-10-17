@@ -210,7 +210,7 @@ while getopts -- '-:f:hu:v' OPTION; do
         fi
     else
         OPTARG="${OPTARG:-}"
-        OPTARG="${OPTARG//[= ]}"
+        OPTARG="${OPTARG#=}"
         OPTERR="-${OPTION}"
     fi
     case "${OPTION}" in
@@ -275,7 +275,7 @@ declare -r BASHTEST_TMPDIR
 # Call as `root="$(test_tmpdir tree)"`; the helper has no caller-state side effects.
 test_tmpdir() {
     local name="${1:-tmp}"
-    if [[ "${name}" == */* ]] || [[ "${name}" == "." ]] || [[ "${name}" == ".." ]]; then
+    if [[ "${name}" == */* || "${name}" == *\\* || "${name}" == *:* ]] || [[ "${name}" == "." ]] || [[ "${name}" == ".." ]]; then
         die "Temporary-directory name must be a basename: '${name}'."
     fi
     mktemp -d "${BASHTEST_TMPDIR}/${name}.XXXXXX"
@@ -432,31 +432,66 @@ function test_runner() {
 # test needs to be run with certain precaution and additional flags, so that it
 # can update the golden file.
 
+# Convert Windows drive paths to one spelling before comparing prefixes. Unix
+# paths remain unchanged, including literal backslashes in Unix filenames.
+_bashtest_normalize_path() {
+    case "${OSTYPE}" in
+        msys*|cygwin*) cygpath -m -- "${1}" ;;
+        *) printf '%s\n' "${1}" ;;
+    esac
+}
+
+_bashtest_relative_path() {
+    local path root entry logical physical
+    path="$(_bashtest_normalize_path "${1}")"
+    for root in "${RUNFILES_DIR:-}/${TEST_WORKSPACE:-}" \
+        "${TEST_SRCDIR:-}/${TEST_WORKSPACE:-}" \
+        "${_BASHTEST_UPDATE_GOLDEN:-}" "${BUILD_WORKSPACE_DIRECTORY:-}" \
+        "${TEST_TMPDIR:-}" "${PWD}"; do
+        [[ -n "${root}" && "${root}" != / ]] || continue
+        root="$(_bashtest_normalize_path "${root}")"
+        if [[ "${path}" == "${root%/}/"* ]]; then
+            printf '%s\n' "${path#"${root%/}/"}"
+            return 0
+        fi
+    done
+    if [[ -f "${RUNFILES_MANIFEST_FILE:-}" && -n "${TEST_WORKSPACE:-}" ]]; then
+        while IFS= read -r entry; do
+            if [[ "${entry}" == ' '* ]]; then
+                entry="${entry# }"
+                logical="${entry%% *}"
+                physical="${entry#* }"
+                logical="${logical//\\s/ }"
+                logical="${logical//\\n/$'\n'}"
+                logical="${logical//\\b/\\}"
+                physical="${physical//\\n/$'\n'}"
+                physical="${physical//\\b/\\}"
+            else
+                logical="${entry%% *}"
+                physical="${entry#* }"
+            fi
+            [[ "${logical}" == "${TEST_WORKSPACE}/"* ]] || continue
+            physical="$(_bashtest_normalize_path "${physical}")"
+            if [[ "${physical}" == "${path}" ]]; then
+                printf '%s\n' "${logical#"${TEST_WORKSPACE}/"}"
+                return 0
+            fi
+        done < "${RUNFILES_MANIFEST_FILE}"
+    fi
+    printf '%s\n' "${path}"
+}
+
 expect_files_eq() {
     FILE_GOLDEN="${1}"
     FILE_RESULT="${2}"
     shift
     shift
     FILE_OUTPUT="${FILE_RESULT}.diff"
-    # Short filenames for output.
-    FILE_REL_GOLDEN="${FILE_GOLDEN}"
-    FILE_REL_RESULT="${FILE_RESULT}"
-    FILE_REL_OUTPUT="${FILE_OUTPUT}"
-    if [[ -n "${RUNFILES_DIR}${TEST_WORKSPACE}" ]]; then
-        FILE_REL_GOLDEN="${FILE_REL_GOLDEN##"${RUNFILES_DIR}/${TEST_WORKSPACE}/"}"
-        FILE_REL_RESULT="${FILE_REL_RESULT##"${RUNFILES_DIR}/${TEST_WORKSPACE}/"}"
-        FILE_REL_OUTPUT="${FILE_REL_OUTPUT##"${RUNFILES_DIR}/${TEST_WORKSPACE}/"}"
-    fi
-    if [[ -n "${TEST_SRCDIR}" ]]; then
-        FILE_REL_GOLDEN="${FILE_REL_GOLDEN##"${TEST_SRCDIR}/"}"
-        FILE_REL_RESULT="${FILE_REL_RESULT##"${TEST_SRCDIR}/"}"
-        FILE_REL_OUTPUT="${FILE_REL_OUTPUT##"${TEST_SRCDIR}/"}"
-    fi
-    if [[ -n "${TEST_TMPDIR}" ]]; then
-        FILE_REL_GOLDEN="${FILE_REL_GOLDEN##"${TEST_TMPDIR}/"}"
-        FILE_REL_RESULT="${FILE_REL_RESULT##"${TEST_TMPDIR}/"}"
-        FILE_REL_OUTPUT="${FILE_REL_OUTPUT##"${TEST_TMPDIR}/"}"
-    fi
+    # A manifest may resolve a golden directly into the source tree. Recover its
+    # workspace-relative name for diagnostics and explicit golden updates.
+    FILE_REL_GOLDEN="$(_bashtest_relative_path "${FILE_GOLDEN}")"
+    FILE_REL_RESULT="$(_bashtest_relative_path "${FILE_RESULT}")"
+    FILE_REL_OUTPUT="$(_bashtest_relative_path "${FILE_OUTPUT}")"
 
     if [[ ! -r "${FILE_GOLDEN}" ]]; then
         _BASHTEST_HAS_ERROR=1
@@ -474,15 +509,16 @@ expect_files_eq() {
         echo >&2 "  Result:  '${FILE_REL_RESULT}'"
         return 1
     fi
-    FILE_DIFF_GOLDEN="${FILE_GOLDEN##"${PWD}/"}"
-    FILE_DIFF_RESULT="${FILE_RESULT##"${PWD}/"}"
-    if ! diff -u "${FILE_DIFF_GOLDEN}" "${FILE_DIFF_RESULT}" > "${FILE_OUTPUT}" 2>&1; then
-        cp "${FILE_OUTPUT}" "${FILE_OUTPUT}.tmp"
-        # shellcheck disable=SC2002
-        cat "${FILE_OUTPUT}.tmp" \
-            | sed -re "s,^[-][-][-] ${FILE_DIFF_GOLDEN}(.*)\$,--- a/${FILE_REL_GOLDEN}\\1,g" \
-            | sed -re "s,^[+][+][+] ${FILE_DIFF_RESULT}(.*)\$,+++ b/${FILE_REL_GOLDEN}\\1,g" \
-            > "${FILE_OUTPUT}"
+    local diff_status=0
+    diff -u --label "a/${FILE_REL_GOLDEN}" --label "b/${FILE_REL_GOLDEN}" \
+        "${FILE_GOLDEN}" "${FILE_RESULT}" > "${FILE_OUTPUT}" 2>&1 || diff_status="${?}"
+    if [[ "${diff_status}" -gt 1 ]]; then
+        _BASHTEST_HAS_ERROR=1
+        echo >&2 "ERROR: diff failed (status ${diff_status}); golden file was not updated."
+        cat >&2 "${FILE_OUTPUT}"
+        return 1
+    fi
+    if [[ "${diff_status}" == 1 ]]; then
         if [[ -n "${_BASHTEST_UPDATE_GOLDEN}" ]]; then
             UPDATE_FILE="${_BASHTEST_UPDATE_GOLDEN}/${FILE_REL_GOLDEN}"
             if [[ ! -w "${UPDATE_FILE}" ]]; then

@@ -15,7 +15,7 @@ class InfrastructureTest(unittest.TestCase):
         self.assertIn('repository-cache: true', workflow)
         self.assertIn('disk-cache: ${{ github.workflow }}', workflow)
         self.assertIn('needs: [release-site-tests, pre-commit, test]', workflow)
-        self.assertIn('os: [ubuntu-latest, macos-latest]', workflow)
+        self.assertIn('os: [ubuntu-latest, macos-latest, windows-latest]', workflow)
 
     def test_release_uploads_before_immutable_publication(self):
         workflow = (Path(__file__).parents[1] / '.github/workflows/release.yml').read_text()
