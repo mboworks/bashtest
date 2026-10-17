@@ -1,3 +1,9 @@
+# 0.7.1
+
+* Fixed the tools test's path expectation when bashtest is an external module.
+* Run the framework test suite as an external dependency in CI to catch
+  root-workspace assumptions before BCR publication.
+
 # 0.7.0
 
 * Automatically provision Bash and Unix utilities, including PCRE support, for

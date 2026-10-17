@@ -34,7 +34,7 @@ cd "${root}/consumer with spaces"
 cp "${repo}/.bazelversion" .bazelversion
 cat > MODULE.bazel <<EOF
 module(name = "consumer")
-bazel_dep(name = "mboworks_bashtest", version = "0.7.0", repo_name = "framework")
+bazel_dep(name = "mboworks_bashtest", version = "0.7.1", repo_name = "framework")
 local_path_override(module_name = "mboworks_bashtest", path = "${repo}")
 EOF
 cat > BUILD.bazel <<'EOF'
