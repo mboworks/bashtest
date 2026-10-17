@@ -74,6 +74,7 @@ test::diff_error_does_not_update_golden() {
     printf 'new\n' > "${root}/result.txt"
     (
         # Simulate a tool failure, distinct from diff's content-mismatch status.
+        # shellcheck disable=SC2329 # Called indirectly by expect_files_eq.
         diff() { echo >&2 'simulated diff error'; return 2; }
         _BASHTEST_UPDATE_GOLDEN="${root}"
         expect_files_eq "${root}/golden.txt" "${root}/result.txt"
