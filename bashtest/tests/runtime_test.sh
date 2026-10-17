@@ -21,9 +21,9 @@ source "${mboworks_bashtest}"
 
 # shellcheck disable=SC2317 # Functions are discovered by test_runner.
 test::managed_windows_runtime() {
-    expect_matches 'bashtest_windows_runtime' "${BASH}"
+    expect_matches 'bashtest_windows_runtime' "$(cygpath -am "${BASH}")"
     for tool in cat cp cut date diff grep mkdir mktemp rm sed cygpath; do
-        expect_matches 'bashtest_windows_runtime' "$(command -v "${tool}")"
+        expect_matches 'bashtest_windows_runtime' "$(cygpath -am "$(command -v "${tool}")")"
     done
     expect_pcre_matches '(?<=prefix)VALUE' 'prefixVALUE'
     expect_eq 'second' "$(sed -n '2p' <<<$'first\nsecond')"

@@ -1,11 +1,12 @@
 # Verify that tests bootstrap their own Bash and Unix utilities.
 $ErrorActionPreference = 'Stop'
 $bazel = (Get-Command bazel).Source
-$env:PATH = "$env:SystemRoot\system32;$env:SystemRoot"
+# Exclude System32 too: it can contain the WSL bash.exe forwarding stub.
+$env:PATH = "$env:SystemRoot"
 Remove-Item Env:BAZEL_SH -ErrorAction SilentlyContinue
 $env:MSYS_NO_PATHCONV = '1'
 foreach ($name in @('bash', 'grep', 'sed', 'diff')) {
-    if (Get-Command $name -ErrorAction SilentlyContinue) { throw "Unexpected installed tool: $name" }
+    if (Get-Command $name -CommandType Application -ErrorAction SilentlyContinue) { throw "Unexpected installed tool: $name" }
 }
 & $bazel test //...
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
