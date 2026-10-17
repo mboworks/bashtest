@@ -94,6 +94,7 @@ def bashtest(
         "mboworks_bashtest": "$(rlocationpath {label})".format(label = _BASHTEST_SH),
         "_BASHTEST_SCRIPT": "$(rlocationpath {label})".format(label = ":" + script),
     }
+
     # Define an executable launcher, not another test. The single test below
     # owns both this executable and every execution-platform tool dependency.
     runner_name = name + "__bashtest_launcher"
