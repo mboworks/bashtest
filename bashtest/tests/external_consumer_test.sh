@@ -61,7 +61,9 @@ test::consumer() {
 }
 test_runner
 EOF
-bazel test --enable_runfiles=no --test_output=errors //:consumer_test
+# Also run the framework's own suite as an external dependency, as BCR does.
+# A standalone consumer test alone cannot catch root-workspace assumptions in it.
+bazel test --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
 bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
 
 # Exercise both documented update spellings with a workspace path containing spaces.

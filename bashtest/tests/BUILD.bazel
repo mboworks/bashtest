@@ -93,6 +93,7 @@ bashtest(
     env = {
         "TARGET_DATA": "$(rlocationpath :target_data)",
         "TARGET_LOCATION": "$(location :target_data)",
+        "TARGET_ROOTPATH": "$(rootpath :target_data)",
     },
     tools = {
         "HELPER": ":helper",
