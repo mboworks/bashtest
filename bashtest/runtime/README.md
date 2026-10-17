@@ -1,7 +1,7 @@
 # Managed Windows runtime
 
 Bashtest's Windows x86-64 launcher resolves a pinned MSYS2 Bash executable through
-Bazel runfiles. The native launcher prepends its directory to the process PATH,
+Bazel runfiles. The shell entry point prepends Bash's directory to the process PATH,
 so both framework utilities and child processes find the bundled programs.
 All executables and DLLs in `usr/bin` are declared runtime inputs, including for
 manifest-only execution. Linux and macOS keep using the installed shell tools.

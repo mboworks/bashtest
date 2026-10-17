@@ -22,6 +22,16 @@ def _windows_launcher_impl(ctx):
     if not ctx.target_platform_has_constraint(ctx.attr._x86_64[platform_common.ConstraintValueInfo]):
         fail("The managed Windows runtime requires x86-64")
     executable = ctx.actions.declare_file(ctx.label.name + ".exe")
+    script = ctx.actions.declare_file(ctx.label.name + ".sh")
+
+    # The native launcher invokes the script through Bash -c. Avoid env's PATH
+    # lookup selecting another installation, and prefer our adjacent utilities.
+    ctx.actions.expand_template(
+        template = ctx.file._launcher,
+        output = script,
+        substitutions = {"#!/usr/bin/env bash": '#!/usr/bin/bash\nexport PATH="${BASH%/*}:${PATH}"'},
+        is_executable = True,
+    )
     info = ctx.actions.args().use_param_file("%s", use_always = True).set_param_file_format("multiline")
     info.add("binary_type=Bash")
     info.add(ctx.workspace_name, format = "workspace_name=%s")
@@ -30,7 +40,7 @@ def _windows_launcher_impl(ctx):
     # without relying on rules_shell-only configuration APIs.
     info.add("symlink_runfiles_enabled=0")
     info.add(_path(ctx, ctx.file._bash), format = "bash_bin_path=%s")
-    info.add(_path(ctx, ctx.file._launcher), format = "bash_file_rlocationpath=%s")
+    info.add(_path(ctx, script), format = "bash_file_rlocationpath=%s")
     ctx.actions.run(
         executable = ctx.executable._launcher_maker,
         inputs = [ctx.executable._native_launcher],
@@ -38,7 +48,7 @@ def _windows_launcher_impl(ctx):
         arguments = [ctx.executable._native_launcher.path, info, executable.path],
     )
     dependencies = ctx.attr.data + ctx.attr.deps + [ctx.attr._runtime]
-    runfiles = ctx.runfiles(files = [ctx.file._launcher, ctx.file._bash])
+    runfiles = ctx.runfiles(files = [script, ctx.file._bash])
     for dependency in dependencies:
         default = dependency[DefaultInfo]
         runfiles = runfiles.merge(ctx.runfiles(transitive_files = default.files)).merge(default.default_runfiles)
