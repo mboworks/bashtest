@@ -1,4 +1,4 @@
-# 0.6.2
+# 0.7.0
 
 * Automatically provision Bash and Unix utilities, including PCRE support, for
   bashtest on Windows x86-64 without system installation or PATH configuration.
