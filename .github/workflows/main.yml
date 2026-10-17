@@ -85,7 +85,9 @@ jobs:
       env:
         MSYS_NO_PATHCONV: "1"
       shell: bash
-      run: bash bashtest/tests/external_consumer_test.sh
+      run: |
+        bash bashtest/tests/external_consumer_test.sh
+        bash bashtest/tests/tools_consumer_test.sh
 
   done:
     permissions:

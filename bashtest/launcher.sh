@@ -35,11 +35,22 @@ set -e
 # shellcheck disable=SC2154
 mboworks_bashtest="$(rlocation "${mboworks_bashtest}")"
 # shellcheck disable=SC2154
-script="$(rlocation "${_BASHTEST_SCRIPT}")"
-if [[ ! -r "${mboworks_bashtest}" || ! -r "${script}" ]]; then
+_BASHTEST_ENTRYPOINT="$(rlocation "${_BASHTEST_SCRIPT}")"
+if [[ ! -r "${mboworks_bashtest}" || ! -r "${_BASHTEST_ENTRYPOINT}" ]]; then
     echo >&2 "ERROR: cannot resolve bashtest runtime or test script"
     exit 1
 fi
 export mboworks_bashtest
 runfiles_export_envvars
-exec "${BASH}" "${script}" "$@"
+if [[ -n "${_BASHTEST_TOOLS_MANIFEST:-}" ]]; then
+    _BASHTEST_TOOLS_FILE="$(rlocation "${_BASHTEST_TOOLS_MANIFEST}")"
+    while IFS=$'\t' read -r _BASHTEST_TOOL_NAME _BASHTEST_TOOL_RUNFILE; do
+        _BASHTEST_TOOL_PATH="$(rlocation "${_BASHTEST_TOOL_RUNFILE}")"
+        if [[ ! -f "${_BASHTEST_TOOL_PATH}" ]]; then
+            echo >&2 "ERROR: cannot resolve tool ${_BASHTEST_TOOL_NAME}: ${_BASHTEST_TOOL_RUNFILE}"
+            exit 1
+        fi
+        export "${_BASHTEST_TOOL_NAME}=${_BASHTEST_TOOL_PATH}"
+    done < "${_BASHTEST_TOOLS_FILE}"
+fi
+exec "${BASH}" "${_BASHTEST_ENTRYPOINT}" "$@"

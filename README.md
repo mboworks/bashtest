@@ -118,3 +118,8 @@ Check [Releases](https://github.com/mboworks/bashtest/releases) for details. All
 ```
 bazel_dep(name = "mboworks_bashtest", version = "0.6.1")
 ```
+
+Executable helpers can be declared with `tools = {"GENERATOR": "//tools:generator"}`.
+Bashtest builds them for the test execution platform, includes their runfiles,
+and exports their resolved paths as environment variables. Invoke them as
+`"${GENERATOR}"`; see [executable tools](bashtest/README.md#executable-tools).

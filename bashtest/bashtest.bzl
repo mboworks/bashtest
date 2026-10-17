@@ -15,7 +15,9 @@
 
 """mboworks_bashtest/bashtest:bashtest"""
 
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":tools.bzl", "bashtest_tools_test")
 
 # Resolve the bashtest runtime relative to *this* module's repository. A `Label`
 # constructed in a `.bzl` file is resolved against the repo that defines the
@@ -32,6 +34,7 @@ def bashtest(
         env = {},
         srcs = [],
         data = [],
+        tools = {},
         **kwargs):
     """Bashtest wrapper.
 
@@ -74,6 +77,7 @@ def bashtest(
         data:      Runtime files made available through Bazel runfiles.
         deps:      Dependencies which will have bashtest_sh automatically added.
         env:       Environment name that automatically adds `mboworks_bashtest`.
+        tools:     Environment variable names mapped to executable targets built for test execution.
         **kwargs:  All other attributes are passed through as is.
     """
 
@@ -90,11 +94,41 @@ def bashtest(
         "mboworks_bashtest": "$(rlocationpath {label})".format(label = _BASHTEST_SH),
         "_BASHTEST_SCRIPT": "$(rlocationpath {label})".format(label = ":" + script),
     }
-    sh_test(
-        name = name,
+    if not tools:
+        sh_test(
+            name = name,
+            srcs = [_LAUNCHER],
+            deps = deps + [_BASHTEST_SH, _RUNFILES],
+            data = data + [":" + script, _BASHTEST_SH],
+            env = env | extra_env,
+            **kwargs
+        )
+        return
+
+    # Define an executable launcher, not another test. The single test below
+    # owns both this executable and every execution-platform tool dependency.
+    runner_name = name + "__bashtest_launcher"
+    launcher_kwargs = dict(kwargs)
+    for attribute in ["args", "env_inherit", "size", "timeout", "flaky", "shard_count", "local", "exec_group_compatible_with"]:
+        launcher_kwargs.pop(attribute, None)
+    launcher_kwargs["testonly"] = True
+    sh_binary(
+        name = runner_name,
         srcs = [_LAUNCHER],
         deps = deps + [_BASHTEST_SH, _RUNFILES],
         data = data + [":" + script, _BASHTEST_SH],
+        **launcher_kwargs
+    )
+    outer_kwargs = dict(kwargs)
+    outer_kwargs.pop("use_bash_launcher", None)
+    tool_names = {}
+    for variable, label in tools.items():
+        tool_names.setdefault(label, []).append(variable)
+    bashtest_tools_test(
+        name = name,
+        runner = ":" + runner_name,
         env = env | extra_env,
-        **kwargs
+        tools = {label: json.encode(names) for label, names in tool_names.items()},
+        data = data + [":" + script, _BASHTEST_SH],
+        **outer_kwargs
     )

@@ -1,5 +1,8 @@
 # 0.6.2
 
+* Added named `tools` mappings that build executables for the test execution
+  platform and export their resolved paths with their runtime runfiles.
+
 * Added Windows support with MSYS2 Bash using rules_shell runfiles resolution.
 * Preserved the existing source API while supporting manifest-only runfiles and
   renamed external module dependencies.
