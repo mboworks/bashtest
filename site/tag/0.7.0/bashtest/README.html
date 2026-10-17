@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>bashtest/README.md - bashtest 0.7.0</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.0/">Home</a><a href="/bashtest/site/tag/0.7.0/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.0">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/33178743ba6cee992f028fa3954932884fe904ad">Source</a></nav><p>bashtest 0.7.0</p><main><h1 dir="auto" id="mboworks_bashtestbashtest">mboworks_bashtest//bashtest</h1>
+<p dir="auto">Bashtest provides <code class="notranslate">sh_test</code> wrapper that simplifies the creation of shell tests.</p>
+<ul dir="auto">
+<li>bashtest:bashtest, bashtest/bashtest.sh</li>
+<li>sh_library <code class="notranslate">bashtest_sh</code> which provides a test runner for complex shell tests involving golden files that provides built-in golden update functionality (see <code class="notranslate">bazel run //bashtest:bashtest_help</code>).
+<ul dir="auto">
+<li>status helper <code class="notranslate">test_has_error</code>: Returns whether a test function has had an expectation error. This is reset for every test function.</li>
+<li>status helper <code class="notranslate">test_has_failed_tests</code>: Returns whether a test program had previous failing test functions.</li>
+<li>scratch helper <code class="notranslate">test_tmpdir [name]</code>: Creates and prints a unique directory below <code class="notranslate">${BASHTEST_TMPDIR}</code>.</li>
+<li>expectation <code class="notranslate">expect_eq</code> "${LHS}" "${RHS}": Asserts that two strings are the same.</li>
+<li>expectation <code class="notranslate">expect_ne</code> "${LHS}" "${RHS}": Asserts that two strings are different.</li>
+<li>expectation <code class="notranslate">expect_files_eq</code> "${LHS}" "${RHS}": Asserts that two files are the same (supports golden updates).</li>
+<li>expectation <code class="notranslate">expect_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is present in an array.</li>
+<li>expectation <code class="notranslate">expect_not_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is not present in an array.</li>
+<li>expectation <code class="notranslate">expect_output_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text contains a literal substring.</li>
+<li>expectation <code class="notranslate">expect_output_not_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text does not contain a literal substring.</li>
+<li>expectation <code class="notranslate">expect_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches an extended regular expression (bash built-in; <code class="notranslate">^</code>/<code class="notranslate">$</code> anchor the whole text).</li>
+<li>expectation <code class="notranslate">expect_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match an extended regular expression.</li>
+<li>expectation <code class="notranslate">expect_pcre_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches a Perl Compatible Regular Expression (requires an external PCRE tool).</li>
+<li>expectation <code class="notranslate">expect_pcre_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match a Perl Compatible Regular Expression.</li>
+<li>control <code class="notranslate">skip_test</code> "${REASON}": Marks the current test as skipped and reports the reason. Use <code class="notranslate">skip_test "reason" &amp;&amp; return</code> to end the test body.</li>
+<li>special test function <code class="notranslate">test::test_init</code>: If present, then this function runs first! Tests will only be executed if it succeeds.</li>
+<li>special test function <code class="notranslate">test::test_done</code>: If present, then this function runs last!</li>
+</ul>
+</li>
+</ul>
+<p dir="auto">The macro supports directory and manifest-only runfiles on Linux, macOS, and<br>
+Windows x86-64 with an automatically provisioned MSYS2 runtime. See the root <a href="../index.html#installation-and-requirements">installation requirements</a><br>
+for Windows setup and resolving data dependencies with <code class="notranslate">rlocation</code>.</p>
+<h2 dir="auto" id="executable-tools">Executable tools</h2>
+<p dir="auto">Use <code class="notranslate">tools</code> to build helper executables for the test execution platform and export<br>
+resolved paths automatically:</p>
+<div class="highlight highlight-source-python" dir="auto"><pre class="notranslate"><span class="pl-en">bashtest</span>(
+    <span class="pl-s1">name</span> <span class="pl-c1">=</span> <span class="pl-s">"generator_test"</span>,
+    <span class="pl-s1">srcs</span> <span class="pl-c1">=</span> [<span class="pl-s">"generator_test.sh"</span>],
+    <span class="pl-s1">tools</span> <span class="pl-c1">=</span> {<span class="pl-s">"GENERATOR"</span>: <span class="pl-s">"//tools:generator"</span>},
+)</pre></div>
+<p dir="auto">The script can invoke <code class="notranslate">"${GENERATOR}" --output "${TEST_TMPDIR}/result"</code>.<br>
+Tools must be executable Bazel targets; their runtime runfiles are included.<br>
+This uses the test execution group, including <code class="notranslate">exec_group_compatible_with</code> on Bazel 8 and newer, so<br>
+cross-compilation builds helpers for the platform running the test. <code class="notranslate">data</code><br>
+continues to use the target configuration. Do not put the same target in both<br>
+<code class="notranslate">data</code> and <code class="notranslate">tools</code>. Multiple names may refer to the same tool.</p>
+<p dir="auto">Keys must be shell environment variable names and must not conflict with <code class="notranslate">env</code><br>
+or <code class="notranslate">env_inherit</code>. Names beginning with <code class="notranslate">_BASHTEST</code>, <code class="notranslate">TEST_</code>, <code class="notranslate">RUNFILES_</code>, or <code class="notranslate">BASH</code>,<br>
+and <code class="notranslate">mboworks_bashtest</code>, <code class="notranslate">PATH</code>, <code class="notranslate">IFS</code>, <code class="notranslate">SHELLOPTS</code>, <code class="notranslate">ENV</code>, <code class="notranslate">EUID</code>, <code class="notranslate">UID</code>, and<br>
+<code class="notranslate">PPID</code> are reserved. Quote exported paths when invoking tools, including on<br>
+Windows. No <code class="notranslate">$(location ...)</code> expansion is needed for tool paths.</p></main><footer>Release snapshot · 33178743ba6cee992f028fa3954932884fe904ad</footer></body></html>

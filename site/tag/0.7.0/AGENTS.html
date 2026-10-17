@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AGENTS.md - bashtest 0.7.0</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.0/">Home</a><a href="/bashtest/site/tag/0.7.0/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.0">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/33178743ba6cee992f028fa3954932884fe904ad">Source</a></nav><p>bashtest 0.7.0</p><main><h1 dir="auto" id="agent-and-contributor-rules---bashtest">Agent and contributor rules - bashtest</h1>
+<p dir="auto">These rules apply to human and automated contributors. <code class="notranslate">RULES.md</code> owns code layout and API<br>
+compatibility; <code class="notranslate">STYLE_SH.md</code> owns shell conventions; <code class="notranslate">GIT_RULES.md</code> owns branch and PR operations.</p>
+<p dir="auto">Run <code class="notranslate">bazel test //...</code>, <code class="notranslate">python3 -m unittest discover -s tools -p '*_test.py'</code>, and<br>
+<code class="notranslate">pre-commit run --all-files</code> before proposing repository-wide changes. Add regression tests for<br>
+behavior changes. Preserve the supported operating systems in CI and keep direct Bazel dependencies<br>
+explicit. Keep developer-only dependencies separate from the published module where supported.</p>
+<p dir="auto">Never weaken lint rules or required checks to make CI pass. Do not commit Bazel outputs, local rc<br>
+files, caches, or generated release artifacts. Format Starlark with the pinned Buildifier hooks.<br>
+Use the existing shell test framework and its diagnostics. Keep public behavior documented in the<br>
+same change. Keep Markdown tables vertically aligned; generated docs retain their source of truth.</p>
+<p dir="auto">Versions in <code class="notranslate">MODULE.bazel</code> and <code class="notranslate">CHANGELOG.md</code> must agree. Use <code class="notranslate">tools/trigger_release.sh</code> for numeric<br>
+semantic-version release tags. Preserve the existing immutable GitHub release and BCR publication<br>
+flow. <a href="docs/infrastructure.html">Infrastructure guidance</a> explains CI, caching, and site publishing.</p></main><footer>Release snapshot · 33178743ba6cee992f028fa3954932884fe904ad</footer></body></html>

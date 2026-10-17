@@ -1,0 +1,67 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STYLE_SH.md - bashtest 0.7.0</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.0/">Home</a><a href="/bashtest/site/tag/0.7.0/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.0">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/33178743ba6cee992f028fa3954932884fe904ad">Source</a></nav><p>bashtest 0.7.0</p><main><h1 dir="auto" id="shell-style">Shell style</h1>
+<p dir="auto">Follow the <a href="https://google.github.io/styleguide/shellguide.html" rel="nofollow">Google Shell Style Guide</a> unless<br>
+this document or repository tooling says otherwise.</p>
+<h2 dir="auto" id="tooling">Tooling</h2>
+<ul dir="auto">
+<li>Use Bash. Executable scripts start with <code class="notranslate">#!/usr/bin/env bash</code>, followed by the licence header.</li>
+<li>Format with the pinned <code class="notranslate">beautysh</code> pre-commit hook.</li>
+<li>Run ShellCheck and explain necessary local suppressions next to the affected code.</li>
+<li>Use <code class="notranslate">set -euo pipefail</code> in scripts unless a documented compatibility constraint prevents it.</li>
+<li>Quote expansions unless word splitting is intentional and documented.</li>
+<li>Make function variables <code class="notranslate">local</code> and use lower-case names for locals and functions.</li>
+</ul>
+<p dir="auto">The formatter and linter versions are pinned in <a href="https://github.com/mboworks/bashtest/blob/33178743ba6cee992f028fa3954932884fe904ad/.pre-commit-config.yaml"><code class="notranslate">.pre-commit-config.yaml</code></a>.</p>
+<h2 dir="auto" id="functions-and-state">Functions and state</h2>
+<ul dir="auto">
+<li>A function returns data on standard output and diagnostics on standard error.</li>
+<li>Do not return results by mutating caller variables, global counters, the working directory, shell<br>
+options, or traps.</li>
+<li>A function whose stated purpose is an external effect may perform that effect; keep its scope<br>
+narrow and explicit.</li>
+<li>Avoid <code class="notranslate">eval</code>, <code class="notranslate">printf -v</code>, and string-built command lines. Use arrays for commands and arguments.</li>
+<li>Prefer small functions with one clear responsibility.</li>
+</ul>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate"><span class="pl-en">make_tree</span>() {
+  <span class="pl-k">local</span> root
+  root=<span class="pl-s"><span class="pl-pds">"</span><span class="pl-s"><span class="pl-pds">$(</span>mktemp -d<span class="pl-pds">)</span></span><span class="pl-pds">"</span></span>
+  mkdir -p <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${root}</span>/src<span class="pl-pds">"</span></span>
+  <span class="pl-c1">echo</span> <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${root}</span><span class="pl-pds">"</span></span>
+}
+
+tree=<span class="pl-s"><span class="pl-pds">"</span><span class="pl-s"><span class="pl-pds">$(</span>make_tree<span class="pl-pds">)</span></span><span class="pl-pds">"</span></span></pre></div>
+<h2 dir="auto" id="conditions-and-loops">Conditions and loops</h2>
+<ul dir="auto">
+<li>Prefer <code class="notranslate">[[ ... ]]</code> for string and file tests and <code class="notranslate">(( ... ))</code> for arithmetic.</li>
+<li>Use <code class="notranslate">case</code> for multi-way string matching.</li>
+<li>Read lines with <code class="notranslate">while IFS= read -r line</code>; do not lose backslashes or surrounding whitespace.</li>
+<li>Do not parse structured data with fragile <code class="notranslate">grep</code>/<code class="notranslate">sed</code> pipelines when <code class="notranslate">jq</code>, <code class="notranslate">yq</code>, or a small<br>
+checked-in Python tool provides a reliable parser.</li>
+</ul>
+<h2 dir="auto" id="temporary-files-and-cleanup">Temporary files and cleanup</h2>
+<ul dir="auto">
+<li>Tests put temporary files below <code class="notranslate">${BASHTEST_TMPDIR}</code> and use <code class="notranslate">test_tmpdir name</code> for retained fixtures.<br>
+The framework owns their cleanup; test bodies must not add cleanup traps or recursive deletion.</li>
+<li>Quote and validate deletion targets. Never recursively delete an unresolved variable, a broad<br>
+workspace path, or a user directory.</li>
+<li>Framework/standalone scripts may use a cleanup trap only for resources they own, after the path is known.</li>
+<li>Bazel tests use <code class="notranslate">${TEST_TMPDIR}</code> for target-owned temporary output and resolve runfiles through<br>
+<code class="notranslate">${TEST_SRCDIR}</code> and <code class="notranslate">${TEST_WORKSPACE}</code>.</li>
+</ul>
+<h2 dir="auto" id="portability">Portability</h2>
+<ul dir="auto">
+<li>Support the Bash versions available on the macOS and Linux runners in the CI matrix.</li>
+<li>Do not assume GNU-only flags in scripts that run on macOS; branch on capabilities when necessary.</li>
+<li>Avoid <code class="notranslate">mapfile</code> where a script must run under the system Bash shipped with macOS.</li>
+<li>Preserve upper-case names for environment and Bazel runfile variables.</li>
+<li>Check required external programs early and fail with a useful message.</li>
+</ul></main><footer>Release snapshot · 33178743ba6cee992f028fa3954932884fe904ad</footer></body></html>

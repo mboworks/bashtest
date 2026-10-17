@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "total_bytes": 425165,
+  "sections": {
+    "root": {
+      "files": 2,
+      "bytes": 194
+    },
+    "site": {
+      "files": 27,
+      "bytes": 424971
+    }
+  },
+  "review_bytes": 250000000
+}
