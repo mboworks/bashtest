@@ -62,6 +62,8 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
+        & C:/msys64/usr/bin/bash.exe -lc 'pacman -S --needed --noconfirm bash coreutils diffutils grep sed'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         "BAZEL_SH=C:/msys64/usr/bin/bash.exe" >> $env:GITHUB_ENV
         "C:/msys64/usr/bin" >> $env:GITHUB_PATH
     - uses: bazel-contrib/setup-bazel@0.19.0

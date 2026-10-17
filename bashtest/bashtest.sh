@@ -509,8 +509,16 @@ expect_files_eq() {
         echo >&2 "  Result:  '${FILE_REL_RESULT}'"
         return 1
     fi
-    if ! diff -u --label "a/${FILE_REL_GOLDEN}" --label "b/${FILE_REL_GOLDEN}" \
-        "${FILE_GOLDEN}" "${FILE_RESULT}" > "${FILE_OUTPUT}" 2>&1; then
+    local diff_status=0
+    diff -u --label "a/${FILE_REL_GOLDEN}" --label "b/${FILE_REL_GOLDEN}" \
+        "${FILE_GOLDEN}" "${FILE_RESULT}" > "${FILE_OUTPUT}" 2>&1 || diff_status="${?}"
+    if [[ "${diff_status}" -gt 1 ]]; then
+        _BASHTEST_HAS_ERROR=1
+        echo >&2 "ERROR: diff failed (status ${diff_status}); golden file was not updated."
+        cat >&2 "${FILE_OUTPUT}"
+        return 1
+    fi
+    if [[ "${diff_status}" == 1 ]]; then
         if [[ -n "${_BASHTEST_UPDATE_GOLDEN}" ]]; then
             UPDATE_FILE="${_BASHTEST_UPDATE_GOLDEN}/${FILE_REL_GOLDEN}"
             if [[ ! -w "${UPDATE_FILE}" ]]; then

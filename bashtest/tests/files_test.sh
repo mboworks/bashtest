@@ -66,4 +66,20 @@ test::reject_windows_path_names() {
     done
 }
 
+# shellcheck disable=SC2317
+test::diff_error_does_not_update_golden() {
+    local root status=0
+    root="$(test_tmpdir diff-error)"
+    printf 'old\n' > "${root}/golden.txt"
+    printf 'new\n' > "${root}/result.txt"
+    (
+        # Simulate a tool failure, distinct from diff's content-mismatch status.
+        diff() { echo >&2 'simulated diff error'; return 2; }
+        _BASHTEST_UPDATE_GOLDEN="${root}"
+        expect_files_eq "${root}/golden.txt" "${root}/result.txt"
+    ) || status="${?}"
+    expect_eq 1 "${status}"
+    expect_eq old "$(cat "${root}/golden.txt")"
+}
+
 test_runner
