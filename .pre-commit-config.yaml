@@ -37,7 +37,7 @@ repos:
     name: Test publishing and CI policy
     language: system
     entry: python3 -m unittest discover -s tools -p '*_test.py'
-    files: ^(tools/|docs/assets/|release-site\.json$|\.github/workflows/)
+    files: ^(\.pre-commit/check_version\.sh$|tools/|docs/assets/|release-site\.json$|\.github/workflows/)
     pass_filenames: false
   - id: uncomment-bazelmod-includes
     name: uncomment-bazelmod-includes
@@ -49,8 +49,9 @@ repos:
   - id: compare-versions
     name: compare-versions
     description: |
-      Require matching CHANGELOG.md and MODULE.bazel versions. After a release,
-      the first later commit must advance both beyond the latest release tag.
+      Require matching MODULE.bazel, CHANGELOG.md, README.md, and consumer fixture
+      versions. After a release, the first later commit must advance the development
+      version beyond the latest release tag.
     language: system
     entry: .pre-commit/check_version.sh
     pass_filenames: False

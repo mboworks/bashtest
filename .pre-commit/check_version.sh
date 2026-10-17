@@ -35,6 +35,15 @@ if [[ ! "${BAZELMOD_VERSION}" =~ ^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0
     die "MODULE.bazel version (${BAZELMOD_VERSION}) must use numeric X.Y.Z format."
 fi
 
+# These examples and consumer fixtures describe this checkout's module version.
+# Historical changelog entries and release templates intentionally do not.
+for file in README.md bashtest/tests/external_consumer_test.sh bashtest/tests/tools_consumer_test.sh; do
+    reference_version="$(sed -nE 's/.*bazel_dep\(name = "mboworks_bashtest", version = "([^"]+)".*/\1/p' "${file}")"
+    if [[ "${reference_version}" != "${BAZELMOD_VERSION}" ]]; then
+        die "${file} bashtest dependency version (${reference_version}) != MODULE.bazel (${BAZELMOD_VERSION})."
+    fi
+done
+
 LATEST_RELEASE="$(
     git tag --list |
         awk '/^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$/' |

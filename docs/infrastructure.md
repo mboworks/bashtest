@@ -62,3 +62,17 @@ style guide or competing shell formatter is introduced.
 Run `bazel test //...`, `python3 -m unittest discover -s tools -p '*_test.py'`, and
 `pre-commit run --all-files`. CI also builds the configured release documentation to validate
 links and mappings before publication.
+
+## Version consistency
+
+`MODULE.bazel` identifies the checkout's development version. The `compare-versions`
+pre-commit hook checks it against the first `CHANGELOG.md` heading, the README's
+Bazel dependency example, and both external consumer fixtures. Update all five
+references together. Historical changelog entries retain their original versions;
+release assets and BCR templates derive their versions during publication.
+
+The released commit may keep its release version. The first subsequent commit must
+advance beyond the latest numeric release tag. `tools/version_test.py` exercises
+mismatched and missing references, invalid versions, numeric tag ordering, and this
+post-release transition in temporary Git repositories. These tests run through the
+infrastructure pre-commit hook and CI.
