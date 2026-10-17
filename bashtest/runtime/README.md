@@ -6,6 +6,10 @@ so both framework utilities and child processes find the bundled programs.
 All executables and DLLs in `usr/bin` are declared runtime inputs, including for
 manifest-only execution. Linux and macOS keep using the installed shell tools.
 
+When passing paths from another MSYS2 or Git Bash installation, use Windows absolute
+paths, for example `--update-golden="$(cygpath -am "${PWD}")"`. Installation-relative
+paths such as `/tmp` can refer to different directories in the managed runtime.
+
 The repository rule downloads the official MSYS2 base archive dated 2026-09-27
 and diffutils 3.12-1, verifying their SHA-256 hashes. The base includes Bash,
 coreutils, grep with PCRE, sed, and runtime libraries; diffutils is an additional

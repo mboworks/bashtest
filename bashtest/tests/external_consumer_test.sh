@@ -65,9 +65,15 @@ bazel test --enable_runfiles=no --test_output=errors //:consumer_test
 bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
 
 # Exercise both documented update spellings with a workspace path containing spaces.
+# Separate MSYS2 installations have different /tmp mounts. Cross the native
+# Bazel boundary with a Windows path that identifies the same directory in both.
+workspace="${PWD}"
+case "${OSTYPE}" in
+    msys*|cygwin*) workspace="$(cygpath -am "${workspace}")" ;;
+esac
 printf 'stale\n' > golden.txt
-bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${PWD}" --keep-tmpdir=never
+bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]
 printf 'stale again\n' > golden.txt
-bazel run --enable_runfiles=no //:consumer_test -- -u="${PWD}" --keep-tmpdir=never
+bazel run --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]
