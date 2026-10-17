@@ -10,20 +10,9 @@ $env:MSYS_NO_PATHCONV = '1'
 foreach ($name in @('bash', 'grep', 'sed', 'diff')) {
     if (Get-Command $name -CommandType Application -ErrorAction SilentlyContinue) { throw "Unexpected installed tool: $name" }
 }
-# These targets exercise bashtest without any unrelated sh_binary toolchain.
-$bootstrapTests = @(
-    '//bashtest/tests:runtime_test',
-    '//bashtest/tests:bashtest_test',
-    '//bashtest/tests:bashtest_init_test',
-    '//bashtest/tests:bashtest_done_test',
-    '//bashtest/tests:bashtest_skip_test',
-    '//bashtest/tests:bashtest_no_skip_test',
-    '//bashtest/tests:files_test',
-    '//bashtest/tests:launcher_test'
-)
-& $bazel test @bootstrapTests
+& $bazel test //...
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $bazel test --enable_runfiles=no @bootstrapTests
+& $bazel test --enable_runfiles=no //...
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $bazel run --enable_runfiles=no //bashtest/tests:runtime_test
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -34,12 +23,6 @@ $bashFile = & $bazel cquery '@bashtest_windows_runtime//:usr/bin/bash.exe' --out
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $bash = Join-Path $execRoot $bashFile
 $env:PATH = "$(Split-Path $bash);$(Split-Path $bazel);$env:PATH"
-# rules_shell helper binaries have their own shell discovery requirements.
-# Use the downloaded runtime for them too; no installed Unix tools are involved.
-& $bazel test //...
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $bazel test --enable_runfiles=no //...
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $bash bashtest/tests/external_consumer_test.sh
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $bash bashtest/tests/tools_consumer_test.sh

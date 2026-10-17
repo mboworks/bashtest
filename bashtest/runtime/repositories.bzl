@@ -26,12 +26,20 @@ def _runtime_impl(ctx):
         sha256 = "7902c8ce3d4dd69a0f5e98dc9d5c83c17b23314ba486169db57ef6e2835ce3b6",
     )
     ctx.file("BUILD.bazel", '''
+load("@rules_shell//shell/toolchains:sh_toolchain.bzl", "sh_toolchain")
+
 package(default_visibility = ["//visibility:public"])
 exports_files(["usr/bin/bash.exe"])
 filegroup(
     name = "runtime",
     srcs = glob(["usr/bin/**", "usr/share/licenses/**"]),
 )
-''')
+sh_toolchain(
+    name = "shell",
+    path = {bash_path},
+    launcher = "@bazel_tools//tools/launcher:launcher",
+    launcher_maker = "@bazel_tools//tools/launcher:launcher_maker",
+)
+'''.format(bash_path = repr(str(ctx.path("usr/bin/bash.exe")))))
 
 windows_runtime = repository_rule(implementation = _runtime_impl)

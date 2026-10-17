@@ -27,3 +27,5 @@ bazel_dep(name = "rules_shell", version = "0.8.0")
 windows_runtime = use_repo_rule("//bashtest/runtime:repositories.bzl", "windows_runtime")
 
 windows_runtime(name = "bashtest_windows_runtime")
+
+register_toolchains("//bashtest/runtime:windows_toolchain")

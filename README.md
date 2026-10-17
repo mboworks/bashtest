@@ -95,7 +95,9 @@ On Windows x86-64, `bashtest` automatically downloads a pinned MSYS2 runtime,
 including Bash, coreutils, diffutils, grep with PCRE support, sed, and their DLLs.
 No MSYS2 installation, `BAZEL_SH`, or manual `PATH` setup is needed for bashtest
 rules. The runtime is private to Bazel and does not install or update system
-software. Other shell rules and `genrule` actions retain their own requirements.
+software. A Windows shell toolchain also supplies Bazel's shell-based test
+helpers. Native Bazel 7 shell rules and `genrule` actions retain their own
+requirements.
 The first Windows build needs network access; subsequent builds can use Bazel's
 repository cache. See [runtime details](bashtest/runtime/README.md).
 

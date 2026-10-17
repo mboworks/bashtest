@@ -10,7 +10,7 @@ The repository rule downloads the official MSYS2 base archive dated 2026-09-27
 and diffutils 3.12-1, verifying their SHA-256 hashes. The base includes Bash,
 coreutils, grep with PCRE, sed, and runtime libraries; diffutils is an additional
 package. No package manager is run, and no system installation is modified.
-Only targets needing the Windows runtime fetch these archives. Expect roughly
+The toolchain declaration is local; its runtime is needed only for Windows. Expect roughly
 42 MB of compressed downloads plus extracted files and the Bazel cache.
 
 Sources and package metadata:
@@ -26,8 +26,12 @@ Update the archive URLs and hashes together, then run the clean-environment
 Windows CI test, including the PCRE and golden-file checks.
 
 The launcher uses Bazel's native Windows launcher and launcher-maker targets,
-matching rules_shell's approach. It neither registers a global shell toolchain
-nor changes unrelated `sh_test` or `genrule` behavior. Native Windows ARM64 is not
+matching rules_shell's approach. A registered Windows shell toolchain also points
+to the downloaded Bash: Bazel's implicit coverage-helper dependency requires a
+shell toolchain even for ordinary tests. This default can also supply rules_shell
+binaries and tests on the local Windows machine. A root module can register its
+own higher-priority shell toolchain. Native Bazel 7 shell rules and `genrule`
+actions retain their separate shell configuration requirements. Native Windows ARM64 is not
 provided. Remote Windows execution has not been validated; declaring the runtime
 inputs alone is not a claim of remote-execution support. MSYS2 runtime relocation,
 worker filesystem policies, and launcher availability also need validation.
