@@ -28,8 +28,9 @@ test::executable_and_runfiles() {
     # shellcheck disable=SC2154
     expect_eq "${HELPER}" "${HELPER_ALIAS}"
     # shellcheck disable=SC2154
-    # location retains sh_test rootpath semantics; use rlocation above for I/O.
-    expect_eq 'bashtest/tests/target_data.txt' "${TARGET_LOCATION}"
+    # location retains sh_test rootpath semantics in root and external repos.
+    # Use rlocation above for I/O, including manifest-only execution.
+    expect_eq "${TARGET_ROOTPATH}" "${TARGET_LOCATION}"
     # Distinct executables must both be available in this single test invocation.
     # shellcheck disable=SC2154
     expect_ne "${HELPER}" "${SECOND_HELPER}"

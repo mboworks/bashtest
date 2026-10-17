@@ -119,10 +119,12 @@ remains byte-for-byte, so CRLF and LF golden files are intentionally different.
 
 ### MODULE.bazel
 
-Check [Releases](https://github.com/mboworks/bashtest/releases) for details. All that is needed is a `bazel_dep` instruction with the correct version.
+Use the latest published version from
+[Releases](https://github.com/mboworks/bashtest/releases) when consuming bashtest
+through the Bazel Central Registry.
 
 ```
-bazel_dep(name = "mboworks_bashtest", version = "0.6.1")
+bazel_dep(name = "mboworks_bashtest", version = "0.7.0")
 ```
 
 Executable helpers can be declared with `tools = {"GENERATOR": "//tools:generator"}`.

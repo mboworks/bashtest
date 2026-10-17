@@ -52,8 +52,8 @@ if [[ "${CHANGELOG_VERSION}" != "${VERSION}" ]]; then
     die "Tag = '${TAG}' does not match version = '${CHANGELOG_VERSION}' in CHANGELOG.md."
 fi
 
-# Instead of embed the version in MODULE.bazel, we expect it to be correct already.
-# perl -pi -e "s/version = \"\d+\.\d+\.\d+\",/version = \"${TAG}\",/g" MODULE.bazel
+# Reject an unprepared tag rather than publishing inconsistent version references.
+python3 tools/prepare_release.py --check "${VERSION}"
 
 # Empty `BUILD.bazel`
 {

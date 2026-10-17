@@ -18,6 +18,8 @@
 # Run outside a Bazel test: this creates and builds a separate consumer module.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The override consumes this checkout, including unreleased development versions.
+version="$(sed -nE 's/.*version = "([^"]+)".*/\1/p' "${repo}/MODULE.bazel" | head -n1)"
 root="$(mktemp -d)"
 cleanup() {
     # Windows cannot remove a directory while it is a process working directory.
@@ -34,7 +36,7 @@ cd "${root}/consumer with spaces"
 cp "${repo}/.bazelversion" .bazelversion
 cat > MODULE.bazel <<EOF
 module(name = "consumer")
-bazel_dep(name = "mboworks_bashtest", version = "0.7.0", repo_name = "framework")
+bazel_dep(name = "mboworks_bashtest", version = "${version}", repo_name = "framework")
 local_path_override(module_name = "mboworks_bashtest", path = "${repo}")
 EOF
 cat > BUILD.bazel <<'EOF'
@@ -61,7 +63,9 @@ test::consumer() {
 }
 test_runner
 EOF
-bazel test --enable_runfiles=no --test_output=errors //:consumer_test
+# Also run the framework's own suite as an external dependency, as BCR does.
+# A standalone consumer test alone cannot catch root-workspace assumptions in it.
+bazel test --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
 bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
 
 # Exercise both documented update spellings with a workspace path containing spaces.

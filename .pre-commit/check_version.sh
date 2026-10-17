@@ -58,3 +58,17 @@ if [[ -n "${LATEST_RELEASE}" ]] &&
 [[ "$(git rev-parse HEAD)" != "$(git rev-list -n1 "${LATEST_RELEASE}")" ]]; then
     die "Development version (${BAZELMOD_VERSION}) still matches latest release tag (${LATEST_RELEASE}), but HEAD contains later work. Bump MODULE.bazel and CHANGELOG.md."
 fi
+
+README_VERSION="$(sed -nE 's/.*bazel_dep\(name = "mboworks_bashtest", version = "([^"]+)".*/\1/p' README.md)"
+if [[ ! "${README_VERSION}" =~ ^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$ ]]; then
+    die "README.md must contain one numeric bashtest dependency version."
+fi
+# Development keeps the latest released installation example. Release preparation
+# advances it to the module version in the reviewed commit that will be tagged.
+if [[ -n "${LATEST_RELEASE}" ]]; then
+    if [[ "${README_VERSION}" != "${LATEST_RELEASE}" && "${README_VERSION}" != "${BAZELMOD_VERSION}" ]]; then
+        die "README.md (${README_VERSION}) must match latest release (${LATEST_RELEASE}) or prepared release (${BAZELMOD_VERSION})."
+    fi
+elif [[ "$(version_key "${README_VERSION}")" > "$(version_key "${BAZELMOD_VERSION}")" ]]; then
+    die "README.md (${README_VERSION}) is newer than MODULE.bazel (${BAZELMOD_VERSION})."
+fi
