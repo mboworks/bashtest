@@ -25,6 +25,7 @@ bzl_library(
         "tools.bzl",
         "windows.bzl",
     ],
+    deps = ["@mboworks_bzl//bzl/runfiles"],
 )
 
 sh_library(

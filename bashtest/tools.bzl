@@ -15,10 +15,7 @@
 
 """Bind helper executables to the execution platform of the actual test action."""
 
-def _rlocation_path(ctx, file):
-    if file.short_path.startswith("../"):
-        return file.short_path[3:]
-    return ctx.workspace_name + "/" + file.short_path
+load("@mboworks_bzl//bzl/runfiles:runfiles.bzl", _runfiles = "runfiles")
 
 def _validate_name(name):
     letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
@@ -54,7 +51,7 @@ def _tools_test_impl(ctx):
             if name in names or name in environment.environment or name in environment.inherited_environment:
                 fail("tool environment variable is already defined: " + name)
             names.append(name)
-            entries.append(name + "\t" + _rlocation_path(ctx, executable) + "\n")
+            entries.append(name + "\t" + _runfiles.key(ctx, executable) + "\n")
         tool_files.append(executable)
         tool_runfiles.extend([info.default_runfiles, info.data_runfiles])
     manifest = ctx.actions.declare_file(ctx.label.name + ".tools")
@@ -68,7 +65,7 @@ def _tools_test_impl(ctx):
     return [
         DefaultInfo(executable = executable, runfiles = runfiles),
         RunEnvironmentInfo(
-            environment = environment.environment | ({"_BASHTEST_TOOLS_MANIFEST": _rlocation_path(ctx, manifest)} if ctx.attr.tools else {}),
+            environment = environment.environment | ({"_BASHTEST_TOOLS_MANIFEST": _runfiles.key(ctx, manifest)} if ctx.attr.tools else {}),
             inherited_environment = environment.inherited_environment,
         ),
         coverage_common.instrumented_files_info(ctx, dependency_attributes = ["runner"]),

@@ -1,5 +1,7 @@
 # 0.7.1
 
+* Use mboworks_bzl 0.8.0 runfiles keys for helper executables and tool manifests.
+
 * Derive consumer fixture versions from the module and automate the README
   version update during release preparation. Test development/release version
   consistency and post-release version bumps.

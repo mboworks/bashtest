@@ -38,6 +38,13 @@ cat > MODULE.bazel <<EOF
 module(name = "tools_consumer")
 bazel_dep(name = "mboworks_bashtest", version = "${version}", repo_name = "framework")
 local_path_override(module_name = "mboworks_bashtest", path = "${repo}")
+# Temporary until mboworks_bzl 0.8.0 is published; then remove this override.
+archive_override(
+    module_name = "mboworks_bzl",
+    integrity = "sha256-qDdtBpEZVlxbJCHfW2hXR3GFOS5diYVVIZuWM5p64TI=",
+    strip_prefix = "bzl-afcd7e0279f6791880750dfbccd97c047ad51e96",
+    urls = ["https://github.com/mboworks/bzl/archive/afcd7e0279f6791880750dfbccd97c047ad51e96.tar.gz"],
+)
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 EOF
