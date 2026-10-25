@@ -58,4 +58,39 @@ PROBE
     expect_output_contains '</testsuites>' "${output}"
 }
 
+# shellcheck disable=SC2317 # Functions are discovered by test_runner.
+test::failures_cannot_become_skips_or_negative_matches() {
+    local root report probe output status expected
+    root="$(test_tmpdir classification)"
+    report="${root}/result.xml"
+    cat > "${root}/probe.sh" <<'PROBE'
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+test::a_pass() { :; }
+test::b_probe() {
+    case "${PROBE}" in
+        assertion_skip) expect_eq yes no; skip_test 'later skip' ;;
+        return_skip) skip_test 'later skip'; return 7 ;;
+        invalid_positive) expect_matches '[' text; return 0 ;;
+        invalid_negative) expect_not_matches '[' text; return 0 ;;
+        valid_negative) expect_not_matches needle haystack ;;
+    esac
+}
+test_runner
+PROBE
+    for probe in assertion_skip return_skip invalid_positive invalid_negative valid_negative; do
+        status=0
+        expected=1
+        [[ "${probe}" != valid_negative ]] || expected=0
+        output="$(env PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}"             "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
+        expect_eq "${expected}" "${status}"
+        case "${probe}" in
+            invalid_*) expect_output_contains 'Invalid extended regular expression' "${output}" ;;
+        esac
+        output="$(cat "${report}")"
+        expect_output_contains "tests=\"2\" failures=\"${expected}\" errors=\"0\" skipped=\"0\"" "${output}"
+    done
+}
+
 test_runner
