@@ -4,7 +4,7 @@ All contributions are generally welcome as long as they fit in with the concepts
 
 # Code Rules
 
-All code must adhere to the [RULES.md](RULES.md) and mostly follows the [Google style](https://google.github.io/styleguide/). Where it diverges, the checked-in pre-commit rules are authoritative.
+All code must adhere to the [RULES.md](RULES.md) and mostly follows the [Google style](https://google.github.io/styleguide/). Where it diverges, the checked-in pre-commit rules are authoritative. Shell conventions are in [STYLE_SH.md](STYLE_SH.md); Beautysh, ShellCheck, and Buildifier enforce the applicable formatting and lint rules.
 
 # Workflow and language rules
 

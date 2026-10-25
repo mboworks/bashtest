@@ -27,7 +27,7 @@ The formatter and linter versions are pinned in [`.pre-commit-config.yaml`](.pre
 ```sh
 make_tree() {
   local root
-  root="$(mktemp -d)"
+  root="$(test_tmpdir tree)"
   mkdir -p "${root}/src"
   echo "${root}"
 }
@@ -50,12 +50,13 @@ tree="$(make_tree)"
 - Quote and validate deletion targets. Never recursively delete an unresolved variable, a broad
   workspace path, or a user directory.
 - Framework/standalone scripts may use a cleanup trap only for resources they own, after the path is known.
-- Bazel tests use `${TEST_TMPDIR}` for target-owned temporary output and resolve runfiles through
-  `${TEST_SRCDIR}` and `${TEST_WORKSPACE}`.
+- Bazel tests use `${TEST_TMPDIR}` for target-owned temporary output. Resolve runfiles through
+  `rlocation`, including manifest-only execution on Windows.
 
 ## Portability
 
-- Support the Bash versions available on the macOS and Linux runners in the CI matrix.
+- Support the Bash versions available on the macOS and Linux runners and the managed Windows
+  runtime in the CI matrix.
 - Do not assume GNU-only flags in scripts that run on macOS; branch on capabilities when necessary.
 - Avoid `mapfile` where a script must run under the system Bash shipped with macOS.
 - Preserve upper-case names for environment and Bazel runfile variables.
