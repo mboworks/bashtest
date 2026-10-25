@@ -104,9 +104,9 @@ if bazel build "${flags[@]}" //:invalid_tool_test >invalid.log 2>&1; then
     echo >&2 'ERROR: non-executable tool was accepted'
     exit 1
 fi
-grep -F 'tools requires an executable target' invalid.log
+grep -F 'tools requires an executable target' invalid.log | sed 's/^/[EXPECTED FAILURE: non-executable tool] /'
 if bazel build "${flags[@]}" //:collision_test >collision.log 2>&1; then
     echo >&2 'ERROR: conflicting environment variable was accepted'
     exit 1
 fi
-grep -F 'tool environment variable is already defined' collision.log
+grep -F 'tool environment variable is already defined' collision.log | sed 's/^/[EXPECTED FAILURE: environment collision] /'
