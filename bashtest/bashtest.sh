@@ -42,6 +42,8 @@ _BASHTEST_USAGE=$(cat <<'EOF'
 * -f --test-filter `<pattern>`  A posix regular expression for tests to run,
                                 while skipping other tests. The test as a whole
                                 is considered failing if no test was run.
+* --gtest-output `<xml[:path]>` Write JUnit XML (also accepts GTEST_OUTPUT).
+                                Bazel sets XML_OUTPUT_FILE automatically.
 * --gtest-filter                Like '-f' but uses glob patterns.
 * --no-skip                     Turn every `skip_test` into a failure. For an
                                 environment that GUARANTEES the capability a
@@ -156,6 +158,7 @@ bashtest(
 EOF
 )
 
+_BASHTEST_REPORT_OUTPUT="${GTEST_OUTPUT-${XML_OUTPUT_FILE:+xml:${XML_OUTPUT_FILE}}}"
 _BASHTEST_FILTER_REGX=""
 _BASHTEST_FILTER_GLOB=""
 _BASHTEST_KEEP_TMPDIR="failure"
@@ -173,6 +176,7 @@ _BASHTEST_VERBOSE=
 LONG_OPTIONS_WITH_ARGS=(
     "test[-_]filter"
     "gtest[-_]filter"
+    "gtest[-_]output"
     "keep[-_]tmpdir"
     "update[-_]golden"
 )
@@ -215,6 +219,7 @@ while getopts -- '-:f:hu:v' OPTION; do
     fi
     case "${OPTION}" in
         f|test[-_]filter) _BASHTEST_FILTER_REGX="${OPTARG}" ;;
+        gtest[-_]output) _BASHTEST_REPORT_OUTPUT="${OPTARG}" ;;
         gtest[-_]filter) _BASHTEST_FILTER_GLOB="${OPTARG}" ;;
         h|help) echo "${_BASHTEST_USAGE}"; exit 2 ;;
         keep[-_]tmpdir)
@@ -244,6 +249,13 @@ _BASHTEST_HAS_ERROR=0
 _BASHTEST_SUGGEST_UPDATE=0
 _BASHTEST_INIT_FAILED=0
 _BASHTEST_DONE_FAILED=0
+_BASHTEST_XML_RUNNING=0
+_BASHTEST_XML_STARTED=0
+_BASHTEST_XML_ACTIVE=
+_BASHTEST_XML_TESTS=0
+_BASHTEST_XML_FAILURES=0
+_BASHTEST_XML_ERRORS=0
+_BASHTEST_XML_SKIPPED=0
 
 function _bashtest_cleanup () {
     # Capture FIRST and re-exit with it at the end: a trap's own last command otherwise becomes the
@@ -252,6 +264,22 @@ function _bashtest_cleanup () {
     # this suite's own test at case 5 of 12 and it still reported PASS, hiding the seven that never
     # ran. A test framework reporting green for tests it did not run is the worst bug it can have.
     local status="${?}"
+    if [[ -n "${_BASHTEST_XML_ACTIVE}" ]]; then
+        # A fatal exit runs this trap inside the function's log redirection.
+        exec 1>&198 2>&199
+        _bashtest_xml_replay
+        _bashtest_xml_case error "${_BASHTEST_XML_ACTIVE}" "Test program exited before the function completed (exit ${status})."
+        [[ "${status}" != 0 ]] || status=1
+    elif [[ "${_BASHTEST_XML_RUNNING}" == 1 ]]; then
+        _bashtest_xml_case error test_runner "Test runner exited before completion."
+        [[ "${status}" != 0 ]] || status=1
+    elif [[ "${status}" != 0 && "${_BASHTEST_XML_STARTED}" == 1 && "${_BASHTEST_XML_FAILURES}" == 0 && "${_BASHTEST_XML_ERRORS}" == 0 ]]; then
+        _bashtest_xml_case error test_program "Test program exited with status ${status}."
+    fi
+    if [[ "${_BASHTEST_XML_STARTED}" == 1 ]] && ! _bashtest_xml_write; then
+        echo >&2 "ERROR: Cannot write JUnit report: ${_BASHTEST_XML_PATH}"
+        [[ "${status}" != 0 ]] || status=1
+    fi
     local keep=0
     if [[ "${_BASHTEST_KEEP_TMPDIR}" == "always" ]] \
         || { [[ "${_BASHTEST_KEEP_TMPDIR}" == "failure" ]] && [[ "${_BASHTEST_NUM_FAIL}" != "0" ]]; }; then
@@ -264,7 +292,11 @@ function _bashtest_cleanup () {
     fi
     exit "${status}"
 }
-trap _bashtest_cleanup EXIT HUP INT QUIT TERM
+trap _bashtest_cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 131' QUIT
+trap 'exit 143' TERM
 
 mkdir -p "${TEST_TMPDIR:=/tmp/$(date "+%Y%m%dT%H%M%S")}"
 BASHTEST_TMPDIR="$(mktemp -d -p "${TEST_TMPDIR}")"
@@ -279,6 +311,139 @@ test_tmpdir() {
         die "Temporary-directory name must be a basename: '${name}'."
     fi
     mktemp -d "${BASHTEST_TMPDIR}/${name}.XXXXXX"
+}
+
+# Escape XML text and replace bytes that are not legal UTF-8/XML 1.0 with '?'.
+# The extra trailing byte lets sed consume invalid bytes even at end of line.
+_bashtest_xml_escape() {
+    local valid
+    valid=$'[\x09\x0d\x20-\x7f]|[\xc2-\xdf][\x80-\xbf]|\xe0[\xa0-\xbf][\x80-\xbf]|[\xe1-\xec\xee][\x80-\xbf][\x80-\xbf]|\xed[\x80-\x9f][\x80-\xbf]|\xef[\x80-\xbe][\x80-\xbf]|\xef\xbf[\x80-\xbd]|\xf0[\x90-\xbf][\x80-\xbf][\x80-\xbf]|[\xf1-\xf3][\x80-\xbf][\x80-\xbf][\x80-\xbf]|\xf4[\x80-\x8f][\x80-\xbf][\x80-\xbf]'
+    LC_ALL=C sed -E -e 's/$/ /' -e "s/((${valid})*)./\\1?/g" -e 's/.$//' \
+        -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+        -e 's/"/\&quot;/g' -e "s/'/\\&apos;/g"
+}
+
+_bashtest_xml_attribute() (
+    # Bash 5.2 treats '&' specially in substitutions; older Bash inserts it literally.
+    # Keep the option change in a subshell so callers retain their shell settings.
+    shopt -u patsub_replacement 2>/dev/null || true
+    local text newline="&#10;" carriage_return="&#13;" tab="&#9;"
+    text="$(printf '%s' "${1}" | _bashtest_xml_escape; printf '.')"
+    text="${text%.}"
+    text="${text//$'\n'/${newline}}"
+    text="${text//$'\r'/${carriage_return}}"
+    text="${text//$'\t'/${tab}}"
+    printf '%s' "${text}"
+)
+
+_bashtest_xml_init() {
+    [[ -n "${_BASHTEST_REPORT_OUTPUT}" ]] || return 0
+    case "${_BASHTEST_REPORT_OUTPUT}" in
+        xml) _BASHTEST_XML_PATH=test_detail.xml ;;
+        xml:*) _BASHTEST_XML_PATH="${_BASHTEST_REPORT_OUTPUT#xml:}"
+            _BASHTEST_XML_PATH="${_BASHTEST_XML_PATH:-test_detail.xml}" ;;
+        *) die "Unsupported test report format: '${_BASHTEST_REPORT_OUTPUT}'; expected xml[:path]." ;;
+    esac
+    if [[ "${_BASHTEST_XML_PATH}" == */ || "${_BASHTEST_XML_PATH}" == *\\ ]]; then
+        local name candidate index=0
+        name="${0##*/}"
+        name="${name%.exe}"
+        name="${name%.*}"
+        candidate="${_BASHTEST_XML_PATH}${name}.xml"
+        while [[ -e "${candidate}" ]]; do
+            ((index+=1))
+            candidate="${_BASHTEST_XML_PATH}${name}_${index}.xml"
+        done
+        _BASHTEST_XML_PATH="${candidate}"
+    fi
+    case "${OSTYPE}" in
+        msys*|cygwin*) _BASHTEST_XML_PATH="$(cygpath -u "${_BASHTEST_XML_PATH}")" ;;
+    esac
+    # Anchor relative destinations before test functions can change directory.
+    case "${_BASHTEST_XML_PATH}" in
+        /*|[a-zA-Z]:/*|[a-zA-Z]:\\*) ;;
+        *) _BASHTEST_XML_PATH="${PWD}/${_BASHTEST_XML_PATH}" ;;
+    esac
+    mkdir -p "$(dirname "${_BASHTEST_XML_PATH}")" || die "Cannot create test report directory."
+    _BASHTEST_XML_CASES="${BASHTEST_TMPDIR}/junit-cases.xml"
+    : > "${_BASHTEST_XML_CASES}"
+    _BASHTEST_XML_SUITE="${TEST_TARGET:-${0##*/}}"
+    _BASHTEST_XML_START="${SECONDS}"
+    _BASHTEST_XML_STARTED=1
+}
+
+# Execute in this shell: state set by setup and test functions must remain visible.
+# Only report-enabled runs buffer output, replaying it after each function.
+_bashtest_invoke() {
+    _BASHTEST_RESULT=0
+    if [[ "${_BASHTEST_XML_STARTED}" == 0 ]]; then
+        "${1}" || _BASHTEST_RESULT="${?}"
+    else
+        _BASHTEST_XML_ACTIVE="${1#test::}"
+        _BASHTEST_XML_CASE_START="${SECONDS}"
+        _BASHTEST_XML_LOG="${BASHTEST_TMPDIR}/junit-current.log"
+        _BASHTEST_XML_STDOUT="${BASHTEST_TMPDIR}/junit-stdout.log"
+        _BASHTEST_XML_STDERR="${BASHTEST_TMPDIR}/junit-stderr.log"
+        "${1}" 198>&1 199>&2 > "${_BASHTEST_XML_STDOUT}" 2> "${_BASHTEST_XML_STDERR}" || _BASHTEST_RESULT="${?}"
+        _bashtest_xml_replay
+    fi
+}
+
+_bashtest_xml_replay() {
+    cat "${_BASHTEST_XML_STDOUT}"
+    cat "${_BASHTEST_XML_STDERR}" >&2
+    cat "${_BASHTEST_XML_STDOUT}" "${_BASHTEST_XML_STDERR}" > "${_BASHTEST_XML_LOG}"
+}
+
+# Append one case. Hooks are recorded only on failure, leaving test counts useful.
+_bashtest_xml_case() {
+    [[ "${_BASHTEST_XML_STARTED}" == 1 ]] || return 0
+    local kind="${1}" name="${2}" message="${3:-}" elapsed=0
+    if [[ -n "${_BASHTEST_XML_ACTIVE}" ]]; then
+        elapsed="$((SECONDS - _BASHTEST_XML_CASE_START))"
+    fi
+    if [[ "${kind}" != ignored ]]; then
+        ((_BASHTEST_XML_TESTS+=1))
+        case "${kind}" in
+            failure) ((_BASHTEST_XML_FAILURES+=1)) ;;
+            error) ((_BASHTEST_XML_ERRORS+=1)) ;;
+            skipped) ((_BASHTEST_XML_SKIPPED+=1)) ;;
+        esac
+        {
+            printf '    <testcase name="%s" classname="%s" status="run" time="%s">\n' \
+                "$(_bashtest_xml_attribute "${name}")" "$(_bashtest_xml_attribute "${_BASHTEST_XML_SUITE}")" "${elapsed}"
+            if [[ "${kind}" != pass ]]; then
+                printf '      <%s message="%s">' "${kind}" "$(_bashtest_xml_attribute "${message}")"
+                if [[ -n "${_BASHTEST_XML_ACTIVE}" ]]; then
+                    _bashtest_xml_escape < "${_BASHTEST_XML_LOG}"
+                fi
+                printf '</%s>\n' "${kind}"
+            fi
+            if [[ -n "${_BASHTEST_XML_ACTIVE}" ]]; then
+                printf '      <system-out>'
+                _bashtest_xml_escape < "${_BASHTEST_XML_STDOUT}"
+                printf '</system-out>\n      <system-err>'
+                _bashtest_xml_escape < "${_BASHTEST_XML_STDERR}"
+                printf '</system-err>\n'
+            fi
+            printf '    </testcase>\n'
+        } >> "${_BASHTEST_XML_CASES}"
+    fi
+    _BASHTEST_XML_ACTIVE=
+}
+
+_bashtest_xml_write() {
+    [[ "${_BASHTEST_XML_STARTED}" == 1 ]] || return 0
+    local temporary elapsed="$((SECONDS - _BASHTEST_XML_START))"
+    temporary="$(mktemp "${_BASHTEST_XML_PATH}.XXXXXX")" || return 1
+    {
+        printf '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites tests="%s" failures="%s" errors="%s" skipped="%s" time="%s">\n' \
+            "${_BASHTEST_XML_TESTS}" "${_BASHTEST_XML_FAILURES}" "${_BASHTEST_XML_ERRORS}" "${_BASHTEST_XML_SKIPPED}" "${elapsed}"
+        printf '  <testsuite name="%s" tests="%s" failures="%s" errors="%s" skipped="%s" time="%s">\n' \
+            "$(_bashtest_xml_attribute "${_BASHTEST_XML_SUITE}")" "${_BASHTEST_XML_TESTS}" "${_BASHTEST_XML_FAILURES}" "${_BASHTEST_XML_ERRORS}" "${_BASHTEST_XML_SKIPPED}" "${elapsed}"
+        cat "${_BASHTEST_XML_CASES}"
+        printf '  </testsuite>\n</testsuites>\n'
+    } > "${temporary}" && mv -f "${temporary}" "${_BASHTEST_XML_PATH}"
 }
 
 ################################################################################
@@ -297,6 +462,7 @@ function _bashtest_handler() {
         if [[ -z "${PASS_GLOB}${PASS_REGX}" ]]; then
             echo "[  SKIP  ] ${TEST_NAME}"
             ((_BASHTEST_NUM_SKIP+=1))
+            _bashtest_xml_case skipped "${TEST_NAME}" "Excluded by test filter or failed initialization."
             return
         fi
     fi
@@ -304,22 +470,25 @@ function _bashtest_handler() {
     _BASHTEST_HAS_ERROR=0
     _BASHTEST_SKIPPED=0
     _BASHTEST_SKIP_REASON=
-    local _BASHTEST_RESULT=0
-    ${FUNC_NAME} || _BASHTEST_RESULT="${?}"
+    _bashtest_invoke "${FUNC_NAME}"
     if [[ "${_BASHTEST_SKIPPED}" != "0" ]]; then
         if [[ -n "${_BASHTEST_NO_SKIP}" ]]; then
             echo >&2 "[  FAIL  ] ${TEST_NAME} (skip requested under --no-skip: ${_BASHTEST_SKIP_REASON})"
             ((_BASHTEST_NUM_FAIL+=1))
+            _bashtest_xml_case failure "${TEST_NAME}" "Skip requested under --no-skip: ${_BASHTEST_SKIP_REASON}"
         else
             echo "[  SKIP  ] ${TEST_NAME}: ${_BASHTEST_SKIP_REASON}"
             ((_BASHTEST_NUM_SKIP+=1))
+            _bashtest_xml_case skipped "${TEST_NAME}" "${_BASHTEST_SKIP_REASON}"
         fi
     elif [[ "${_BASHTEST_RESULT}" == "0" ]] && [[ "${_BASHTEST_HAS_ERROR}" == "0" ]]; then
         echo "[  PASS  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_PASS+=1))
+        _bashtest_xml_case pass "${TEST_NAME}"
     else
         echo >&2 "[  FAIL  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_FAIL+=1))
+        _bashtest_xml_case failure "${TEST_NAME}" "Test failed (exit ${_BASHTEST_RESULT}, expectation error ${_BASHTEST_HAS_ERROR})."
     fi
 }
 
@@ -358,6 +527,8 @@ _bashtest_contains_element () {
 # The test's main function that finds and runs all tests.
 
 function test_runner() {
+    _bashtest_xml_init
+    _BASHTEST_XML_RUNNING=1
     if [[ -n "${_BASHTEST_FILTER_GLOB}" ]]; then
         echo "Test filter glob: '${_BASHTEST_FILTER_GLOB}'."
     fi
@@ -366,27 +537,45 @@ function test_runner() {
     fi
     echo "----------"
     TEST_FUNCS=()
-    while IFS='' read -r line; do TEST_FUNCS+=("${line}"); done < <(declare -f|sed -rne 's,^test::([^ ]*).*$,\1,p')
-    if _bashtest_contains_element "test_init" "${TEST_FUNCS[@]}"; then
-        if ! "test::test_init"; then
+    while IFS='' read -r line; do TEST_FUNCS+=("${line}"); done < <(declare -F|LC_ALL=C sed -rne 's,^declare -f test::(.*)$,\1,p')
+    if _bashtest_contains_element "test_init" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
+        _BASHTEST_HAS_ERROR=0
+        _bashtest_invoke test::test_init
+        if [[ "${_BASHTEST_RESULT}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]]; then
+            _bashtest_xml_case error test_init "Test initialization failed."
             _BASHTEST_INIT_FAILED=1
             _BASHTEST_FILTER_GLOB=("${TEST_FUNCS[*]}")
             echo "Test init (test::test_init) failed! Skipping all tests."
+        else
+            _bashtest_xml_case ignored test_init
         fi
         echo "----------"
     fi
-    for TEST in "${TEST_FUNCS[@]}"; do
+    for TEST in ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; do
         if [[ "${TEST}" != "test_init" ]] && [[ "${TEST}" != "test_done" ]]; then
             _bashtest_handler "test::${TEST}" "${TEST}"
             echo "----------"
         fi
     done
-    if _bashtest_contains_element "test_done" "${TEST_FUNCS[@]}"; then
-        if ! "test::test_done"; then
+    if _bashtest_contains_element "test_done" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
+        _BASHTEST_HAS_ERROR=0
+        _bashtest_invoke test::test_done
+        if [[ "${_BASHTEST_RESULT}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]]; then
             _BASHTEST_DONE_FAILED=1
+            _bashtest_xml_case error test_done "Test shutdown failed."
+        else
+            _bashtest_xml_case ignored test_done
         fi
         echo "----------"
     fi
+    if [[ "${_BASHTEST_NUM_PASS}" == 0 && "${_BASHTEST_NUM_FAIL}" == 0 && "${_BASHTEST_INIT_FAILED}" == 0 ]]; then
+        _bashtest_xml_case error test_runner "No tests were run."
+    fi
+    if ! _bashtest_xml_write; then
+        echo >&2 "ERROR: Cannot write JUnit report: ${_BASHTEST_XML_PATH}"
+        return 1
+    fi
+    _BASHTEST_XML_RUNNING=0
     echo "PASS: ${_BASHTEST_NUM_PASS}"
     echo "SKIP: ${_BASHTEST_NUM_SKIP}"
     echo >&2 "FAIL: ${_BASHTEST_NUM_FAIL}"

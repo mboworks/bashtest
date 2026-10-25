@@ -1,5 +1,9 @@
 # 0.7.1
 
+* Emit per-function JUnit XML for Bazel CI using `XML_OUTPUT_FILE`, with
+  GoogleTest-compatible `GTEST_OUTPUT` and `--gtest_output` selection. Include
+  assertion diagnostics, skipped cases, hook failures, and aborted functions.
+
 * Use mboworks_bzl 0.8.0 runfiles keys for helper executables and tool manifests.
 
 * Derive consumer fixture versions from the module and automate the README

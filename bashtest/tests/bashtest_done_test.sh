@@ -19,8 +19,9 @@
 
 set -euo pipefail
 
+# This is an intentionally failing runner fixture; Bazel reports this verifier itself.
 # shellcheck disable=SC1090,SC1091,SC2154
-source "${mboworks_bashtest}"
+GTEST_OUTPUT='' source "${mboworks_bashtest}"
 
 bad_bashtest() {
     echo >&2 "FATAL: Test functionality broken: ${*}"

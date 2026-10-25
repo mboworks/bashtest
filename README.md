@@ -131,3 +131,7 @@ Executable helpers can be declared with `tools = {"GENERATOR": "//tools:generato
 Bashtest builds them for the test execution platform, includes their runfiles,
 and exports their resolved paths as environment variables. Invoke them as
 `"${GENERATOR}"`; see [executable tools](bashtest/README.md#executable-tools).
+
+Bashtest reports individual test functions to Bazel CI through JUnit XML, including
+failure diagnostics and skip reasons. See [JUnit XML reporting](bashtest/README.md#junit-xml-for-ci)
+for GoogleTest-compatible output options and plain `sh_test` integration.

@@ -81,3 +81,63 @@ bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}
 printf 'stale again\n' > golden.txt
 bazel run --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]
+
+# Verify that Bazel collects per-function failure XML, rather than its fallback
+# single-case wrapper, for both our macro and a plain rules_shell sh_test.
+cat >> BUILD.bazel <<'EOF'
+bashtest(
+    name = "junit_failure_test",
+    srcs = ["junit_failure.sh"],
+    tags = ["manual"],
+)
+EOF
+cat > junit_failure.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+# shellcheck disable=SC2317
+test::intentional_failure() { expect_eq 'expected <value>' 'actual & value'; }
+# shellcheck disable=SC2317
+test::passing_case() { expect_eq ok ok; }
+test_runner
+EOF
+chmod +x junit_failure.sh
+junit_targets=(//:junit_failure_test)
+case "${OSTYPE}" in
+    msys*|cygwin*) ;; # Native sh_test retains its own Windows shell configuration.
+    *)
+        # Loads must precede rule calls in BUILD files.
+        { echo 'load("@rules_shell//shell:sh_test.bzl", "sh_test")'; cat BUILD.bazel; } > BUILD.tmp
+        mv BUILD.tmp BUILD.bazel
+        cat >> BUILD.bazel <<'EOF'
+sh_test(
+    name = "junit_sh_failure_test",
+    srcs = ["junit_failure.sh"],
+    data = ["@framework//bashtest:bashtest_sh"],
+    env = {"mboworks_bashtest": "$(rootpath @framework//bashtest:bashtest_sh)"},
+    tags = ["manual"],
+)
+EOF
+        # A direct rules_shell dependency is required for the plain sh_test load.
+        echo 'bazel_dep(name = "rules_shell", version = "0.8.0")' >> MODULE.bazel
+        junit_targets+=(//:junit_sh_failure_test)
+        ;;
+esac
+if bazel test --enable_runfiles=no "${junit_targets[@]}" > junit_failure.log 2>&1; then
+    echo >&2 'ERROR: intentionally failing JUnit fixtures passed'
+    exit 1
+fi
+junit_logs="$(bazel info bazel-testlogs)"
+case "${OSTYPE}" in
+    msys*|cygwin*) junit_logs="$(cygpath -u "${junit_logs}")" ;;
+esac
+for target in "${junit_targets[@]}"; do
+    report="${junit_logs}/${target#//:}/test.xml"
+    grep -F 'tests="2" failures="1" errors="0" skipped="0"' "${report}" >/dev/null
+    grep -F 'name="intentional_failure"' "${report}" >/dev/null
+    grep -F 'name="passing_case"' "${report}" >/dev/null
+    grep -F 'expected &lt;value&gt;' "${report}" >/dev/null
+    grep -F 'actual &amp; value' "${report}" >/dev/null
+    echo "[EXPECTED FAILURE: JUnit fixture] ${target}: Bazel collected per-function failure XML"
+done
