@@ -471,7 +471,12 @@ function _bashtest_handler() {
     _BASHTEST_SKIPPED=0
     _BASHTEST_SKIP_REASON=
     _bashtest_invoke "${FUNC_NAME}"
-    if [[ "${_BASHTEST_SKIPPED}" != "0" ]]; then
+    # A skip request cannot erase an assertion failure or a nonzero return.
+    if [[ "${_BASHTEST_RESULT}" != "0" || "${_BASHTEST_HAS_ERROR}" != "0" ]]; then
+        echo >&2 "[  FAIL  ] ${TEST_NAME}"
+        ((_BASHTEST_NUM_FAIL+=1))
+        _bashtest_xml_case failure "${TEST_NAME}" "Test failed (exit ${_BASHTEST_RESULT}, expectation error ${_BASHTEST_HAS_ERROR})."
+    elif [[ "${_BASHTEST_SKIPPED}" != "0" ]]; then
         if [[ -n "${_BASHTEST_NO_SKIP}" ]]; then
             echo >&2 "[  FAIL  ] ${TEST_NAME} (skip requested under --no-skip: ${_BASHTEST_SKIP_REASON})"
             ((_BASHTEST_NUM_FAIL+=1))
@@ -481,14 +486,10 @@ function _bashtest_handler() {
             ((_BASHTEST_NUM_SKIP+=1))
             _bashtest_xml_case skipped "${TEST_NAME}" "${_BASHTEST_SKIP_REASON}"
         fi
-    elif [[ "${_BASHTEST_RESULT}" == "0" ]] && [[ "${_BASHTEST_HAS_ERROR}" == "0" ]]; then
+    else
         echo "[  PASS  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_PASS+=1))
         _bashtest_xml_case pass "${TEST_NAME}"
-    else
-        echo >&2 "[  FAIL  ] ${TEST_NAME}"
-        ((_BASHTEST_NUM_FAIL+=1))
-        _bashtest_xml_case failure "${TEST_NAME}" "Test failed (exit ${_BASHTEST_RESULT}, expectation error ${_BASHTEST_HAS_ERROR})."
     fi
 }
 
@@ -920,14 +921,30 @@ _bashtest_ellipsize() {
 # text, NOT individual lines (this differs from `grep`, which matches per line).
 # Unanchored patterns behave the same as with `grep`.
 
+# Preserve Bash's three outcomes: 0 match, 1 no match, 2 invalid ERE.
+_bashtest_ere_match() {
+    local regex="${1}" text="${2}"
+    # Keep the pattern unquoted so Bash interprets it as an ERE.
+    [[ "${text}" =~ ${regex} ]]
+}
+
+_bashtest_invalid_regex() {
+    _BASHTEST_HAS_ERROR=1
+    echo >&2 ""
+    echo >&2 "Test failure:"
+    echo >&2 "  Invalid extended regular expression: '${1}'."
+    return 1
+}
+
 expect_matches() {
     REGEX="${1}"
     TEXT="${2}"
     shift
     shift
     TEXT_OUT="$(_bashtest_ellipsize "${TEXT}")"
-    # NOTE: `${REGEX}` must stay unquoted so bash treats it as a pattern.
-    if [[ "${TEXT}" =~ ${REGEX} ]]; then
+    local regex_status=0
+    _bashtest_ere_match "${REGEX}" "${TEXT}" || regex_status="${?}"
+    if [[ "${regex_status}" == 0 ]]; then
         if [[ -n "${_BASHTEST_VERBOSE}" ]]; then
             echo ""
             echo "Test success:"
@@ -935,6 +952,10 @@ expect_matches() {
         fi
         return 0
     else
+        if [[ "${regex_status}" != 1 ]]; then
+            _bashtest_invalid_regex "${REGEX}"
+            return 1
+        fi
         _BASHTEST_HAS_ERROR=1
         echo >&2 ""
         echo >&2 "Test failure:"
@@ -960,8 +981,9 @@ expect_not_matches() {
     shift
     shift
     TEXT_OUT="$(_bashtest_ellipsize "${TEXT}")"
-    # NOTE: `${REGEX}` must stay unquoted so bash treats it as a pattern.
-    if [[ "${TEXT}" =~ ${REGEX} ]]; then
+    local regex_status=0
+    _bashtest_ere_match "${REGEX}" "${TEXT}" || regex_status="${?}"
+    if [[ "${regex_status}" == 0 ]]; then
         _BASHTEST_HAS_ERROR=1
         echo >&2 ""
         echo >&2 "Test failure:"
@@ -970,6 +992,10 @@ expect_not_matches() {
         echo >&2 "  Text:    '${TEXT_OUT}'"
         return 1
     else
+        if [[ "${regex_status}" != 1 ]]; then
+            _bashtest_invalid_regex "${REGEX}"
+            return 1
+        fi
         if [[ -n "${_BASHTEST_VERBOSE}" ]]; then
             echo ""
             echo "Test success:"

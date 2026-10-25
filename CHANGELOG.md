@@ -1,5 +1,9 @@
 # 0.7.1
 
+* Prevent skip requests from hiding failed expectations or nonzero returns.
+  Reject invalid extended regular expressions in both positive and negative
+  assertions instead of treating syntax errors as nonmatches.
+
 * Emit per-function JUnit XML for Bazel CI using `XML_OUTPUT_FILE`, with
   GoogleTest-compatible `GTEST_OUTPUT` and `--gtest_output` selection. Include
   assertion diagnostics, skipped cases, hook failures, and aborted functions.

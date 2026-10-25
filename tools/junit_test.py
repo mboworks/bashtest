@@ -74,6 +74,34 @@ test::test_done() { expect_eq changed "$state"; }
         self.assertIn('stdout', cases['c_return_failure'].find('system-out').text)
         self.assertIn('stderr', cases['c_return_failure'].find('system-err').text)
 
+    def test_failure_takes_precedence_over_a_later_skip(self):
+        for output in (True, False):
+            for body in ('expect_eq yes no; skip_test "later skip"',
+                         'skip_test "later skip"; return 7'):
+                with self.subTest(output=output, body=body):
+                    result = self.run_probe('test::a_pass() { :; }\n'
+                                            f'test::bad() {{ {body}; }}', output=output)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(b'[  FAIL  ] bad', result.stderr)
+                    self.assertNotIn(b'[  SKIP  ] bad', result.stdout)
+                    if output:
+                        case = self.report()['bad']
+                        self.assertIsNotNone(case.find('failure'))
+                        self.assertIsNone(case.find('skipped'))
+
+    def test_invalid_ere_fails_positive_and_negative_assertions(self):
+        for assertion in ('expect_matches', 'expect_not_matches'):
+            for output in (True, False):
+                with self.subTest(assertion=assertion, output=output):
+                    result = self.run_probe(f'test::bad() {{ {assertion} "[" text; return 0; }}',
+                                            output=output)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(b'Invalid extended regular expression', result.stderr)
+                    if output:
+                        self.assertIsNotNone(self.report()['bad'].find('failure'))
+        result = self.run_probe('test::valid() { expect_not_matches "needle" "haystack"; }')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_skip_is_failure_under_no_skip(self):
         result = self.run_probe('test::skip() { skip_test "not available"; }', '--no-skip')
         self.assertEqual(result.returncode, 1)

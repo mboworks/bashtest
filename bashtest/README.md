@@ -90,6 +90,10 @@ function, while functions continue to run in the same shell. Setup and teardown
 state remains visible to the tests. Failed `test_init` and `test_done` hooks appear
 as additional error cases; successful hooks do not count as test cases. Filters
 produce skipped cases, and `--no-skip` turns runtime skip requests into failures.
+An assertion failure or nonzero function return always takes precedence over a
+skip request, even if the skip happens after the failure. Invalid extended
+regular expressions fail both `expect_matches` and `expect_not_matches` with a
+syntax-error diagnostic.
 The existing exit code 2 for no passing or failing cases is retained and recorded
 as a `test_runner` error. An early exit or a catchable signal during a function
 records that function as an error and retains a nonzero exit status; `exit 0`
