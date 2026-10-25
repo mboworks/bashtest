@@ -1,5 +1,9 @@
 # 0.7.1
 
+* Stream stdout/stderr live while capturing JUnit output without losing shared
+  test state. Write provisional active-function reports for interrupted runs,
+  drain capture workers before final results, and fail on capture/report errors.
+
 * Report source locations for failed expectations, including user helpers and
   subshells. Print golden-file diffs on stderr by default and capture them in JUnit
   failure reports, without duplicating diffs in verbose mode.

@@ -281,6 +281,9 @@ _BASHTEST_XML_TESTS=0
 _BASHTEST_XML_FAILURES=0
 _BASHTEST_XML_ERRORS=0
 _BASHTEST_XML_SKIPPED=0
+_BASHTEST_CAPTURE_RUNNING=0
+_BASHTEST_CAPTURE_FAILED=0
+_BASHTEST_CAPTURE_BROKEN=0
 
 function _bashtest_cleanup () {
     # Capture FIRST and re-exit with it at the end: a trap's own last command otherwise becomes the
@@ -292,7 +295,7 @@ function _bashtest_cleanup () {
     if [[ -n "${_BASHTEST_XML_ACTIVE}" ]]; then
         # A fatal exit runs this trap inside the function's log redirection.
         exec 1>&198 2>&199
-        _bashtest_xml_replay
+        _bashtest_capture_case_finish
         _bashtest_xml_case error "${_BASHTEST_XML_ACTIVE}" "Test program exited before the function completed (exit ${status})."
         [[ "${status}" != 0 ]] || status=1
     elif [[ "${_BASHTEST_XML_RUNNING}" == 1 ]]; then
@@ -300,6 +303,12 @@ function _bashtest_cleanup () {
         [[ "${status}" != 0 ]] || status=1
     elif [[ "${status}" != 0 && "${_BASHTEST_XML_STARTED}" == 1 && "${_BASHTEST_XML_FAILURES}" == 0 && "${_BASHTEST_XML_ERRORS}" == 0 ]]; then
         _bashtest_xml_case error test_program "Test program exited with status ${status}."
+    fi
+    if ! _bashtest_capture_stop; then
+        if [[ "${_BASHTEST_XML_ERRORS}" == 0 ]]; then
+            _bashtest_xml_case error test_runner "Output capture did not complete."
+        fi
+        [[ "${status}" != 0 ]] || status=1
     fi
     if [[ "${_BASHTEST_XML_STARTED}" == 1 ]] && ! _bashtest_xml_write; then
         echo >&2 "ERROR: Cannot write JUnit report: ${_BASHTEST_XML_PATH}"
@@ -423,6 +432,14 @@ _bashtest_xml_init() {
         /*|[a-zA-Z]:/*|[a-zA-Z]:\\*) ;;
         *) _BASHTEST_XML_PATH="${PWD}/${_BASHTEST_XML_PATH}" ;;
     esac
+    _BASHTEST_HEAD="$(type -P head)" || die "JUnit reporting requires head on PATH."
+    _BASHTEST_TAIL="$(type -P tail)" || die "JUnit reporting requires tail on PATH."
+    _BASHTEST_WC="$(type -P wc)" || die "JUnit reporting requires wc on PATH."
+    _BASHTEST_TEE="$(type -P tee)" || die "JUnit reporting requires tee on PATH."
+    _BASHTEST_PS=
+    case "${OSTYPE}" in
+        darwin*) _BASHTEST_PS="$(type -P ps)" || die "JUnit reporting requires ps on macOS." ;;
+    esac
     mkdir -p "$(dirname "${_BASHTEST_XML_PATH}")" || die "Cannot create test report directory."
     _BASHTEST_XML_CASES="${BASHTEST_TMPDIR}/junit-cases.xml"
     : > "${_BASHTEST_XML_CASES}"
@@ -505,31 +522,233 @@ expect_success() {
     expect_exit_code 0 ${@+"${@}"}
 }
 
-# Execute in this shell: state set by setup and test functions must remain visible.
-# Only report-enabled runs buffer output, replaying it after each function.
+# Copy a bounded byte range and retain the exact bytes written. A completed
+# prefix intentionally closes tail's pipe; with SIGPIPE ignored tail returns a
+# write error instead of 141. Validate the copied length, head, and tee so that
+# expected upstream closure cannot hide an incomplete read or failed output.
+_bashtest_capture_range() {
+    local statuses=() actual
+    : > "${4}" || return 1
+    [[ "${3}" != 0 ]] || return 0
+    (( ${3} >= 0 )) || return 1
+    "${_BASHTEST_TAIL}" -c "+$(( ${2} + 1 ))" "${1}" 2> "${4}.source-error" | "${_BASHTEST_HEAD}" -c "${3}" | "${_BASHTEST_TEE}" "${4}"
+    statuses=("${PIPESTATUS[@]}")
+    actual="$("${_BASHTEST_WC}" -c < "${4}")" || return 1
+    if [[ "${statuses[1]}" == 0 && "${statuses[2]}" == 0 ]] && (( actual == ${3} )); then
+        return 0
+    fi
+    printf >&2 'ERROR: Incomplete captured output: expected %s bytes, copied %s (tail=%s, head=%s, tee=%s).\n' "${3}" "$((actual))" "${statuses[0]}" "${statuses[1]}" "${statuses[2]}"
+    cat "${4}.source-error" >&2
+    return 1
+}
+
+# Signal 0 also succeeds for Unix zombies. A caller collecting output may not
+# reap the coordinator until our pipes close, so detect that state explicitly.
+_bashtest_capture_parent_alive() {
+    kill -0 "${1}" 2>/dev/null || return 1
+    local field state rest
+    if [[ -r "/proc/${1}/status" ]]; then
+        while IFS=$' \t' read -r field state rest; do
+            if [[ "${field}" == State: ]]; then
+                [[ "${state}" != Z && "${state}" != X && "${state}" != x ]]
+                return
+            fi
+        done < "/proc/${1}/status" 2>/dev/null
+    elif [[ -n "${_BASHTEST_PS}" ]]; then
+        # A process can disappear during this optional query. The next signal-0
+        # check handles that race; sandboxed ps can also lack inspection rights.
+        state="$("${_BASHTEST_PS}" -p "${1}" -o stat= 2>/dev/null)" || return 0
+        [[ "${state}" != *Z* && "${state}" != *X* ]] || return 1
+    fi
+    return 0
+}
+
+# Readers remain shell children (and are reaped), but are disowned from its job
+# list so a user's wait/wait -n never waits for infrastructure. Journals avoid
+# waiting for EOF from a long-lived service started in setup.
+_bashtest_capture_worker() {
+    trap - EXIT
+    local position=0 target count stopping status=0 cancelled=0 orphan_target="" checked=-1 alive
+    trap 'cancelled=1' HUP INT QUIT TERM
+    printf '0\n' > "${2}" || return 1
+    while :; do
+        if [[ "${cancelled}" == 1 ]]; then status=1; break; fi
+        stopping=0
+        if [[ -n "${orphan_target}" ]]; then
+            target="${orphan_target}"
+            stopping=1
+        elif [[ -s "${3}" ]] && IFS= read -r target < "${3}"; then
+            stopping=1
+        else
+            target="$("${_BASHTEST_WC}" -c < "${1}")" || { status=1; break; }
+            target=$((target))
+            alive=1
+            if ! kill -0 "${5}" 2>/dev/null; then
+                alive=0
+            elif [[ "${checked}" != "${SECONDS}" ]]; then
+                checked="${SECONDS}"
+                _bashtest_capture_parent_alive "${5}" || alive=0
+            fi
+            if [[ "${alive}" == 0 ]]; then
+                # A hard-killed coordinator cannot send a stop request. Flush
+                # one finite snapshot, then exit instead of leaving a reader.
+                orphan_target="${target}"
+                stopping=1
+                status=1
+            fi
+        fi
+        if (( target < position && stopping == 0 )); then status=1; break; fi
+        if (( position < target )); then
+            count=$((target - position))
+            # Bounded copies keep cancellation responsive even for large output.
+            if (( count > 1048576 )); then count=1048576; fi
+            if ! _bashtest_capture_range "${1}" "${position}" "${count}" "${2}.chunk"; then
+                status=1
+                break
+            fi
+            ((position+=count))
+            printf '%s\n' "${position}" > "${2}" || { status=1; break; }
+            if (( position < target )); then continue; fi
+        fi
+        [[ "${stopping}" != 1 ]] || break
+        sleep 0.02
+    done
+    printf '%s\n' "${status}" > "${4}"
+}
+
+_bashtest_capture_start() {
+    _BASHTEST_CAPTURE_OUT="${BASHTEST_TMPDIR}/stdout.journal"
+    _BASHTEST_CAPTURE_ERR="${BASHTEST_TMPDIR}/stderr.journal"
+    : > "${_BASHTEST_CAPTURE_OUT}" || return 1
+    : > "${_BASHTEST_CAPTURE_ERR}" || return 1
+    _BASHTEST_CAPTURE_OUT_PID=
+    _BASHTEST_CAPTURE_ERR_PID=
+    # $$ is not the actual PID in a Bash 3.2 subshell. Query a fresh child so
+    # readers can detect coordinator death even there, without running BASH_ENV.
+    # shellcheck disable=SC2016 # PPID expands in the child, not in this shell.
+    BASH_ENV="" "${BASH}" -c 'builtin printf "%s\n" "${PPID}"' > "${BASHTEST_TMPDIR}/capture-parent.pid" || return 1
+    IFS= read -r _BASHTEST_CAPTURE_PARENT < "${BASHTEST_TMPDIR}/capture-parent.pid" || return 1
+    [[ "${_BASHTEST_CAPTURE_PARENT}" =~ ^[1-9][0-9]*$ ]] || return 1
+    _BASHTEST_CAPTURE_RUNNING=1
+    _bashtest_capture_worker "${_BASHTEST_CAPTURE_OUT}" "${BASHTEST_TMPDIR}/stdout.progress" "${BASHTEST_TMPDIR}/stdout.stop" "${BASHTEST_TMPDIR}/stdout.done" "${_BASHTEST_CAPTURE_PARENT}" &
+    _BASHTEST_CAPTURE_OUT_PID="${!}"
+    disown "${_BASHTEST_CAPTURE_OUT_PID}" || return 1
+    _bashtest_capture_worker "${_BASHTEST_CAPTURE_ERR}" "${BASHTEST_TMPDIR}/stderr.progress" "${BASHTEST_TMPDIR}/stderr.stop" "${BASHTEST_TMPDIR}/stderr.done" "${_BASHTEST_CAPTURE_PARENT}" >&2 &
+    _BASHTEST_CAPTURE_ERR_PID="${!}"
+    disown "${_BASHTEST_CAPTURE_ERR_PID}" || return 1
+    _bashtest_capture_wait "${_BASHTEST_CAPTURE_OUT_PID}" "${BASHTEST_TMPDIR}/stdout.progress" "${BASHTEST_TMPDIR}/stdout.done" 0 || return 1
+    _bashtest_capture_wait "${_BASHTEST_CAPTURE_ERR_PID}" "${BASHTEST_TMPDIR}/stderr.progress" "${BASHTEST_TMPDIR}/stderr.done" 0
+}
+
+_bashtest_capture_wait() {
+    local position
+    while :; do
+        # A completed worker is unexpected until the runner requests shutdown.
+        [[ ! -s "${3}" ]] || return 1
+        kill -0 "${1}" 2>/dev/null || return 1
+        # A concurrent progress update can briefly truncate this file. Retry an
+        # incomplete read while the worker is alive, rather than losing output.
+        if [[ -s "${2}" ]] && IFS= read -r position < "${2}"; then
+            if (( position >= ${4} )); then return 0; fi
+        fi
+        sleep 0.01
+    done
+}
+
+_bashtest_capture_error() {
+    if [[ "${_BASHTEST_CAPTURE_BROKEN}" == 0 ]]; then
+        echo >&2 'ERROR: Cannot capture test output completely.'
+    fi
+    _BASHTEST_CAPTURE_FAILED=1
+    _BASHTEST_CAPTURE_BROKEN=1
+    _BASHTEST_RUNNER_FAILED=1
+    _bashtest_record_failure
+}
+
+_bashtest_capture_case_finish() {
+    local out_end err_end status=0
+    out_end="$("${_BASHTEST_WC}" -c < "${_BASHTEST_CAPTURE_OUT}")" || status=1
+    err_end="$("${_BASHTEST_WC}" -c < "${_BASHTEST_CAPTURE_ERR}")" || status=1
+    out_end=$((out_end))
+    err_end=$((err_end))
+    _bashtest_capture_wait "${_BASHTEST_CAPTURE_OUT_PID}" "${BASHTEST_TMPDIR}/stdout.progress" "${BASHTEST_TMPDIR}/stdout.done" "${out_end}" || status=1
+    _bashtest_capture_wait "${_BASHTEST_CAPTURE_ERR_PID}" "${BASHTEST_TMPDIR}/stderr.progress" "${BASHTEST_TMPDIR}/stderr.done" "${err_end}" || status=1
+    _bashtest_capture_range "${_BASHTEST_CAPTURE_OUT}" "${_BASHTEST_CAPTURE_OUT_START}" "$((out_end - _BASHTEST_CAPTURE_OUT_START))" "${_BASHTEST_XML_STDOUT}" > /dev/null || status=1
+    _bashtest_capture_range "${_BASHTEST_CAPTURE_ERR}" "${_BASHTEST_CAPTURE_ERR_START}" "$((err_end - _BASHTEST_CAPTURE_ERR_START))" "${_BASHTEST_XML_STDERR}" > /dev/null || status=1
+    cat "${_BASHTEST_XML_STDOUT}" "${_BASHTEST_XML_STDERR}" > "${_BASHTEST_XML_LOG}" || status=1
+    if [[ "${status}" != 0 ]]; then _bashtest_capture_error; fi
+}
+
+_bashtest_capture_stop() {
+    [[ "${_BASHTEST_CAPTURE_RUNNING}" == 1 ]] || return 0
+    local stream pid target status=0 result
+    # Request both streams before waiting. EXIT cleanup may interrupt this
+    # function; keep requests stable and let cleanup finish the same shutdown.
+    for stream in stdout stderr; do
+        if [[ -s "${BASHTEST_TMPDIR}/${stream}.stop" ]]; then continue; fi
+        if [[ "${stream}" == stdout ]]; then pid="${_BASHTEST_CAPTURE_OUT_PID}"; else pid="${_BASHTEST_CAPTURE_ERR_PID}"; fi
+        target="$("${_BASHTEST_WC}" -c < "${BASHTEST_TMPDIR}/${stream}.journal")" || status=1
+        if ! printf '%s\n' "$((target))" > "${BASHTEST_TMPDIR}/${stream}.stop"; then
+            status=1
+            [[ -z "${pid}" ]] || kill "${pid}" 2>/dev/null || true
+        fi
+    done
+    for stream in stdout stderr; do
+        if [[ "${stream}" == stdout ]]; then pid="${_BASHTEST_CAPTURE_OUT_PID}"; else pid="${_BASHTEST_CAPTURE_ERR_PID}"; fi
+        while [[ ! -s "${BASHTEST_TMPDIR}/${stream}.done" ]]; do
+            if ! kill -0 "${pid}" 2>/dev/null; then break; fi
+            sleep 0.01
+        done
+        result=1
+        if [[ -s "${BASHTEST_TMPDIR}/${stream}.done" ]]; then
+            IFS= read -r result < "${BASHTEST_TMPDIR}/${stream}.done" || status=1
+        else
+            status=1
+        fi
+        [[ "${result}" == 0 ]] || status=1
+    done
+    _BASHTEST_CAPTURE_RUNNING=0
+    if [[ "${status}" != 0 ]]; then _bashtest_capture_error; fi
+    return "${status}"
+}
+
+# Execute in this shell. Append-only journals also accept output from services
+# that remain alive across setup/test/teardown. Report each function's byte window.
 _bashtest_invoke() {
     _BASHTEST_RESULT=0
+    _BASHTEST_CAPTURE_FAILED=0
     if [[ "${_BASHTEST_XML_STARTED}" == 0 ]]; then
         _bashtest_execute "${1}"
     else
-        _BASHTEST_XML_ACTIVE="${1#test::}"
-        _BASHTEST_XML_CASE_START="${SECONDS}"
-        _BASHTEST_XML_LOG="${BASHTEST_TMPDIR}/junit-current.log"
-        _BASHTEST_XML_STDOUT="${BASHTEST_TMPDIR}/junit-stdout.log"
-        _BASHTEST_XML_STDERR="${BASHTEST_TMPDIR}/junit-stderr.log"
-        _bashtest_execute "${1}" 198>&1 199>&2 > "${_BASHTEST_XML_STDOUT}" 2> "${_BASHTEST_XML_STDERR}"
-        _bashtest_xml_replay
+        {
+            _BASHTEST_CAPTURE_OUT_START="$("${_BASHTEST_WC}" -c < "${_BASHTEST_CAPTURE_OUT}")"
+            _BASHTEST_CAPTURE_ERR_START="$("${_BASHTEST_WC}" -c < "${_BASHTEST_CAPTURE_ERR}")"
+            _BASHTEST_XML_CASE_START="${SECONDS}"
+            _BASHTEST_XML_LOG="${BASHTEST_TMPDIR}/junit-current.log"
+            _BASHTEST_XML_STDOUT="${BASHTEST_TMPDIR}/junit-stdout.log"
+            _BASHTEST_XML_STDERR="${BASHTEST_TMPDIR}/junit-stderr.log"
+            : > "${_BASHTEST_XML_LOG}"
+            : > "${_BASHTEST_XML_STDOUT}"
+            : > "${_BASHTEST_XML_STDERR}"
+            _BASHTEST_XML_ACTIVE="${1#test::}"
+            if ! _bashtest_xml_write 1; then
+                _BASHTEST_CAPTURE_FAILED=1
+                _BASHTEST_RUNNER_FAILED=1
+                _bashtest_record_failure
+                echo >&2 "ERROR: Cannot write JUnit progress report: ${_BASHTEST_XML_PATH}"
+                # Reporting must not prevent user cleanup from releasing a
+                # service or fixture after a report destination becomes invalid.
+                if [[ "${1}" == test::test_done ]]; then
+                    _bashtest_execute "${1}" >> "${_BASHTEST_CAPTURE_OUT}" 2>> "${_BASHTEST_CAPTURE_ERR}"
+                    _bashtest_capture_case_finish
+                fi
+            else
+                _bashtest_execute "${1}" >> "${_BASHTEST_CAPTURE_OUT}" 2>> "${_BASHTEST_CAPTURE_ERR}"
+                _bashtest_capture_case_finish
+            fi
+        } 198>&1 199>&2
     fi
-    # A successful final command must not erase a failure in a descendant shell.
-    if test_has_error; then
-        _BASHTEST_HAS_ERROR=1
-    fi
-}
-
-_bashtest_xml_replay() {
-    cat "${_BASHTEST_XML_STDOUT}"
-    cat "${_BASHTEST_XML_STDERR}" >&2
-    cat "${_BASHTEST_XML_STDOUT}" "${_BASHTEST_XML_STDERR}" > "${_BASHTEST_XML_LOG}"
+    if test_has_error; then _BASHTEST_HAS_ERROR=1; fi
 }
 
 # Append one case. Hooks are recorded only on failure, leaving test counts useful.
@@ -571,14 +790,23 @@ _bashtest_xml_case() {
 
 _bashtest_xml_write() {
     [[ "${_BASHTEST_XML_STARTED}" == 1 ]] || return 0
-    local temporary elapsed="$((SECONDS - _BASHTEST_XML_START))"
+    local temporary elapsed="$((SECONDS - _BASHTEST_XML_START))" provisional="${1:-0}"
+    local tests="${_BASHTEST_XML_TESTS}" errors="${_BASHTEST_XML_ERRORS}"
+    if [[ "${provisional}" == 1 ]]; then
+        ((tests+=1))
+        ((errors+=1))
+    fi
     temporary="$(mktemp "${_BASHTEST_XML_PATH}.XXXXXX")" || return 1
     {
         printf '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites tests="%s" failures="%s" errors="%s" skipped="%s" time="%s">\n' \
-            "${_BASHTEST_XML_TESTS}" "${_BASHTEST_XML_FAILURES}" "${_BASHTEST_XML_ERRORS}" "${_BASHTEST_XML_SKIPPED}" "${elapsed}"
+            "${tests}" "${_BASHTEST_XML_FAILURES}" "${errors}" "${_BASHTEST_XML_SKIPPED}" "${elapsed}"
         printf '  <testsuite name="%s" tests="%s" failures="%s" errors="%s" skipped="%s" time="%s">\n' \
-            "$(_bashtest_xml_attribute "${_BASHTEST_XML_SUITE}")" "${_BASHTEST_XML_TESTS}" "${_BASHTEST_XML_FAILURES}" "${_BASHTEST_XML_ERRORS}" "${_BASHTEST_XML_SKIPPED}" "${elapsed}"
+            "$(_bashtest_xml_attribute "${_BASHTEST_XML_SUITE}")" "${tests}" "${_BASHTEST_XML_FAILURES}" "${errors}" "${_BASHTEST_XML_SKIPPED}" "${elapsed}"
         cat "${_BASHTEST_XML_CASES}"
+        if [[ "${provisional}" == 1 ]]; then
+            printf '    <testcase name="%s" classname="%s" status="run" time="0"><error message="Function completion was not recorded; this report is provisional while it is running."/></testcase>\n' \
+                "$(_bashtest_xml_attribute "${_BASHTEST_XML_ACTIVE}")" "$(_bashtest_xml_attribute "${_BASHTEST_XML_SUITE}")"
+        fi
         printf '  </testsuite>\n</testsuites>\n'
     } > "${temporary}" && mv -f "${temporary}" "${_BASHTEST_XML_PATH}"
 }
@@ -656,7 +884,11 @@ function _bashtest_handler() {
     _BASHTEST_SKIP_REASON=
     _bashtest_invoke "${FUNC_NAME}"
     # A skip request cannot erase an assertion failure or a nonzero return.
-    if [[ "${_BASHTEST_RESULT}" != "0" || "${_BASHTEST_HAS_ERROR}" != "0" ]]; then
+    if [[ "${_BASHTEST_CAPTURE_FAILED}" == 1 ]]; then
+        echo >&2 "[  FAIL  ] ${TEST_NAME} (test output/reporting error)"
+        ((_BASHTEST_NUM_FAIL+=1))
+        _bashtest_xml_case error "${TEST_NAME}" "Test output capture or progress reporting failed."
+    elif [[ "${_BASHTEST_RESULT}" != "0" || "${_BASHTEST_HAS_ERROR}" != "0" ]]; then
         echo >&2 "[  FAIL  ] ${TEST_NAME}"
         ((_BASHTEST_NUM_FAIL+=1))
         _bashtest_xml_case failure "${TEST_NAME}" "Test failed (exit ${_BASHTEST_RESULT}, expectation error ${_BASHTEST_HAS_ERROR})."
@@ -732,6 +964,15 @@ function test_runner() {
         _bashtest_xml_write || return 1
         return 1
     fi
+    if [[ "${_BASHTEST_XML_STARTED}" == 1 ]] && ! _bashtest_capture_start; then
+        _bashtest_capture_stop || true
+        _BASHTEST_RUNNER_FAILED=1
+        echo >&2 'ERROR: Cannot start test output capture.'
+        _bashtest_xml_case error test_runner "Cannot start test output capture."
+        _BASHTEST_XML_RUNNING=0
+        _bashtest_xml_write || return 1
+        return 1
+    fi
     if [[ -n "${_BASHTEST_FILTER_GLOB}" ]]; then
         echo "Test filter glob: '${_BASHTEST_FILTER_GLOB}'."
     fi
@@ -793,6 +1034,11 @@ function test_runner() {
         fi
         echo "----------"
     fi
+    if ! _bashtest_capture_stop; then
+        if [[ "${_BASHTEST_XML_ERRORS}" == 0 ]]; then
+            _bashtest_xml_case error test_runner "Output capture did not complete."
+        fi
+    fi
     if [[ "${empty_shard}" == 0 && "${_BASHTEST_NUM_PASS}" == 0 && "${_BASHTEST_NUM_FAIL}" == 0 && "${_BASHTEST_INIT_FAILED}" == 0 ]]; then
         _bashtest_xml_case error test_runner "No tests were run."
     fi
@@ -806,6 +1052,11 @@ function test_runner() {
     echo "SKIP: ${_BASHTEST_NUM_SKIP}"
     echo >&2 "FAIL: ${_BASHTEST_NUM_FAIL}"
     echo "----------"
+    if [[ "${_BASHTEST_CAPTURE_BROKEN}" == 1 ]]; then
+        _BASHTEST_RUNNER_FAILED=1
+        echo >&2 'ERROR: Test output capture failed.'
+        return 1
+    fi
     if [[ "${_BASHTEST_INIT_FAILED}" -ne "0" ]]; then
         _BASHTEST_RUNNER_FAILED=1
         echo >&2 "ERROR: Test initialization failed."
