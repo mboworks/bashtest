@@ -66,6 +66,9 @@ EOF
 # Also run the framework's own suite as an external dependency, as BCR does.
 # A standalone consumer test alone cannot catch root-workspace assumptions in it.
 bazel test --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
+# A filtered/sharded meta-test must not leak its settings into verifier fixtures.
+bazel test --enable_runfiles=no --test_filter='^junit_cases_and_failures$' \
+    --test_sharding_strategy=forced=5 @framework//bashtest/tests:junit_test
 bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
 
 # Exercise both documented update spellings with a workspace path containing spaces.

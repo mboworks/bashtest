@@ -7,6 +7,13 @@ set -euo pipefail
 # shellcheck disable=SC1090,SC1091,SC2154
 source "${mboworks_bashtest}"
 
+# Verifier fixtures select their own cases, independently of the outer test's
+# filter/shard/fail-fast settings. Additional env arguments can override these.
+_junit_probe() {
+    env TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE= \
+        TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0 TESTBRIDGE_TEST_ONLY= "${@}"
+}
+
 # shellcheck disable=SC2317 # Functions are discovered by test_runner.
 test::junit_cases_and_failures() {
     local root output status=0 report
@@ -24,7 +31,7 @@ test::c_skip() { skip_test 'missing "dependency"'; }
 test::test_done() { expect_eq changed "${state}"; }
 test_runner
 PROBE
-    output="$(env GTEST_OUTPUT="xml:${report}" "${BASH}" "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
+    output="$(_junit_probe GTEST_OUTPUT="xml:${report}" "${BASH}" "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
     expect_eq 1 "${status}"
     expect_output_contains 'Some tests failed.' "${output}"
     output="$(cat "${report}")"
@@ -47,7 +54,7 @@ source "${mboworks_bashtest}"
 test::abort() { echo 'before abort' >&2; exit 7; }
 test_runner
 PROBE
-    output="$(env GTEST_OUTPUT= XML_OUTPUT_FILE="${report}" "${BASH}" "${root}/probe.sh" \
+    output="$(_junit_probe GTEST_OUTPUT= XML_OUTPUT_FILE="${report}" "${BASH}" "${root}/probe.sh" \
         --gtest_output="xml:${report}" --keep-tmpdir=never 2>&1)" || status="${?}"
     expect_eq 7 "${status}"
     expect_output_contains 'before abort' "${output}"
@@ -86,7 +93,7 @@ PROBE
         status=0
         expected=1
         [[ "${probe}" != valid_negative ]] || expected=0
-        output="$(env PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
+        output="$(_junit_probe PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
             "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
         expect_eq "${expected}" "${status}"
         case "${probe}" in
@@ -132,7 +139,7 @@ PROBE
         status=0
         expected=1
         [[ "${probe}" != handled ]] || expected=0
-        output="$(env PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
+        output="$(_junit_probe PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
             "${root}/probe.sh" --strict-commands --keep-tmpdir=never 2>&1)" || status="${?}"
         expect_eq "${expected}" "${status}"
         expect_output_contains '[  PASS  ] b_state' "${output}"
@@ -144,7 +151,7 @@ PROBE
     done
     sed 's/^test_runner$/if test_runner; then exit 9; else exit 1; fi/' "${root}/probe.sh" > "${root}/conditional.sh"
     status=0
-    output="$(env PROBE=handled GTEST_OUTPUT="xml:${report}" "${BASH}" \
+    output="$(_junit_probe PROBE=handled GTEST_OUTPUT="xml:${report}" "${BASH}" \
         "${root}/conditional.sh" --strict-commands --keep-tmpdir=never 2>&1)" || status="${?}"
     expect_eq 1 "${status}"
     expect_output_contains 'requires a standalone test_runner' "${output}"
@@ -169,10 +176,7 @@ test::gamma() { echo CASE:gamma; }
 test::test_done() { echo DONE; }
 test_runner
 PROBE
-    # Nested fixtures own their selection environment and never acknowledge the
-    # parent target's shard status file.
-    local command=(env TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE=
-    TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0 TESTBRIDGE_TEST_ONLY= "GTEST_OUTPUT=xml:${report}")
+    local command=(_junit_probe "GTEST_OUTPUT=xml:${report}")
     output="$("${command[@]}" TESTBRIDGE_TEST_ONLY='^alpha$' "${BASH}" "${root}/probe.sh")"
     expect_output_contains 'CASE:alpha' "${output}"
     expect_output_not_contains 'CASE:beta' "${output}"

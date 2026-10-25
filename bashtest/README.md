@@ -191,3 +191,8 @@ no custom report exists. Reporting begins when `test_runner` is called.
 Nested runner/verifier scripts should select their own output file, or disable
 reporting with `GTEST_OUTPUT=`, so an expected failure does not become the parent
 target's report.
+Verifier fixtures should also choose their own selection environment: clear
+`TESTBRIDGE_TEST_ONLY`, set `TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0`, and use
+`TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE=` for an unsharded
+child. This prevents the parent's filter, shard assignment, or acknowledgement
+file from changing the fixture being verified.
