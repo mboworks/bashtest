@@ -17,7 +17,9 @@ Run one of the following commands to get detailed information on the actual bash
 The flags can be used on the `bazel run` and `bazel test` commands (the latter requiring `--test_arg=...`).
 
 Use `--keep-tmpdir=never|failure|always` to control scratch retention; the default is `failure`.
-A retained path is printed at shutdown. Bazel itself may still remove a sandbox unless the test runs
+Failure retention includes nonzero exits, failed cases or hooks, aborted runs, invalid runner settings,
+and report-writing errors, even when the runner status is handled by its caller. `never` deletes
+owned scratch data on failure; `always` retains it on success too. A retained path is printed at shutdown. Bazel itself may still remove a sandbox unless the test runs
 locally or with `--sandbox_debug`.
 
 ### Functionality

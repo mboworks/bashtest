@@ -387,6 +387,75 @@ test::bytes() {
         self.assertIn(b'Cannot write JUnit report', result.stderr)
         self.assertFalse((directory / 'result.xml').exists())
 
+    def test_scratch_retention_modes_and_original_exit_status(self):
+        record = self.root / 'scratch.path'
+        prefix = 'printf "%s" "$BASHTEST_TMPDIR" > "$SCRATCH_RECORD"\n' \
+                 'printf evidence > "$BASHTEST_TMPDIR/evidence"\n'
+        for output in (True, False):
+            for mode in ('never', 'failure', 'always'):
+                for command, status in ((':', 0), ('return 7', 1), ('exit 42', 42)):
+                    with self.subTest(output=output, mode=mode, command=command):
+                        result = self.run_probe(prefix + f'test::body() {{ {command}; }}',
+                                                f'--keep-tmpdir={mode}', output=output,
+                                                SCRATCH_RECORD=str(record))
+                        self.assertEqual(result.returncode, status, result.stderr)
+                        scratch = Path(record.read_text())
+                        retained = mode == 'always' or (mode == 'failure' and status != 0)
+                        self.assertEqual(scratch.exists(), retained)
+                        self.assertEqual(b'Preserved test scratch directory:' in result.stderr, retained)
+                        if retained:
+                            self.assertEqual((scratch / 'evidence').read_text(), 'evidence')
+
+    def test_scratch_retained_for_hooks_aborts_and_invalid_selection(self):
+        record = self.root / 'scratch.path'
+        prefix = 'printf "%s" "$BASHTEST_TMPDIR" > "$SCRATCH_RECORD"\n'
+        for output in (True, False):
+            for body, args, status in (
+                    ('test::test_init() { return 3; }\ntest::body() { :; }', (), 1),
+                    ('test::test_done() { return 3; }\ntest::body() { :; }', (), 1),
+                    ('test::body() { exit 0; }', (), 1),
+                    ('test::body() { echo "$UNDEFINED_RETENTION_PROBE"; }', (), 1),
+                    ('test::body() { kill -TERM $$; }', (), 143),
+                    ('test::body() { :; }', ('--test_filter=[',), 1),
+                    ('test::body() { :; }', ('--test_filter=absent',), 2)):
+                with self.subTest(output=output, body=body, args=args):
+                    result = self.run_probe(prefix + body, *args, output=output,
+                                            SCRATCH_RECORD=str(record))
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    self.assertTrue(Path(record.read_text()).is_dir())
+                    self.assertIn(b'Preserved test scratch directory:', result.stderr)
+        # A conditional caller can handle the runner status, but the diagnostic
+        # artifacts must survive even when the program ultimately exits 0.
+        result = self.run_probe(prefix + 'test::body() { :; }', '--test_filter=[',
+                                output=False, runner='test_runner || :', SCRATCH_RECORD=str(record))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(Path(record.read_text()).is_dir())
+
+    def test_scratch_retained_for_report_write_errors(self):
+        record = self.root / 'scratch.path'
+        directory = self.root / 'report directory'
+        prefix = 'printf "%s" "$BASHTEST_TMPDIR" > "$SCRATCH_RECORD"\n'
+        result = self.run_probe(prefix + 'test::body() { rmdir "$REPORT_DIRECTORY"; }',
+                                f'--gtest_output=xml:{directory}/result.xml',
+                                SCRATCH_RECORD=str(record), REPORT_DIRECTORY=str(directory))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(Path(record.read_text()).is_dir())
+        self.assertIn(b'Cannot write JUnit report', result.stderr)
+
+    def test_scratch_creation_failure_never_cleans_the_caller_path(self):
+        blocked = self.root / 'not a directory'
+        blocked.write_text('caller-owned')
+        caller = self.root / 'caller scratch'
+        caller.mkdir()
+        sentinel = caller / 'sentinel'
+        sentinel.write_text('preserve me')
+        result = self.run_probe('', output=False, TEST_TMPDIR=str(blocked), BASHTEST_TMPDIR=str(caller))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn(b'unbound variable', result.stderr)
+        self.assertNotIn(b'Preserved test scratch directory:', result.stderr)
+        self.assertEqual(blocked.read_text(), 'caller-owned')
+        self.assertEqual(sentinel.read_text(), 'preserve me')
+
     def test_disabled_reports_and_invalid_output_fail_closed(self):
         for environment in ({'GTEST_OUTPUT': ''}, {'output': False}):
             result = self.run_probe('test::pass() { :; }', **environment)

@@ -27,6 +27,23 @@ The macro supports directory and manifest-only runfiles on Linux, macOS, and
 Windows x86-64 with an automatically provisioned MSYS2 runtime. See the root [installation requirements](../README.md#installation-and-requirements)
 for Windows setup and resolving data dependencies with `rlocation`.
 
+## Scratch retention
+
+`--keep-tmpdir=failure` is the default. It preserves the runner-owned
+`${BASHTEST_TMPDIR}` after a nonzero process exit, a failed case or lifecycle hook,
+an aborted run, invalid runner settings, or a report-writing error. Handling a
+nonzero `test_runner` return does not erase that failure for retention purposes.
+Failed expectations outside the runner also retain their scratch data, including
+failures recorded by waited descendant shells. Successful runs remove it.
+
+`--keep-tmpdir=never` removes owned scratch data even on failure;
+`--keep-tmpdir=always` preserves it even on success. Cleanup preserves the original
+nonzero process exit status, including signal-derived statuses. If creating the
+scratch directory fails, cleanup leaves the caller's `${TEST_TMPDIR}` alone.
+Only the runner-created directory is removed, and retained paths are printed to
+stderr. Bazel may still delete its sandbox; use local execution or
+`--sandbox_debug` when investigating retained artifacts.
+
 ## Command failure handling
 
 `expect_success command args...` checks for exit status 0.

@@ -271,6 +271,8 @@ _BASHTEST_HAS_ERROR=0
 _BASHTEST_SUGGEST_UPDATE=0
 _BASHTEST_INIT_FAILED=0
 _BASHTEST_DONE_FAILED=0
+_BASHTEST_RUNNER_FAILED=0
+_BASHTEST_OWNS_TMPDIR=0
 _BASHTEST_XML_RUNNING=0
 _BASHTEST_XML_STARTED=0
 _BASHTEST_XML_ACTIVE=
@@ -302,15 +304,21 @@ function _bashtest_cleanup () {
         echo >&2 "ERROR: Cannot write JUnit report: ${_BASHTEST_XML_PATH}"
         [[ "${status}" != 0 ]] || status=1
     fi
-    local keep=0
-    if [[ "${_BASHTEST_KEEP_TMPDIR}" == "always" ]] \
-        || { [[ "${_BASHTEST_KEEP_TMPDIR}" == "failure" ]] && [[ "${_BASHTEST_NUM_FAIL}" != "0" ]]; }; then
-        keep=1
-    fi
-    if [[ "${keep}" == "0" ]]; then
-        rm -rf "${BASHTEST_TMPDIR}"
-    else
-        echo >&2 "Preserved test scratch directory: ${BASHTEST_TMPDIR}"
+    # Scratch creation can itself fail. Never clean up an unset/unresolved path.
+    if [[ "${_BASHTEST_OWNS_TMPDIR}" == 1 ]]; then
+        local keep=0
+        if [[ "${_BASHTEST_KEEP_TMPDIR}" == always ]]; then
+            keep=1
+        elif [[ "${_BASHTEST_KEEP_TMPDIR}" == failure ]]; then
+            if [[ "${status}" != 0 || "${_BASHTEST_RUNNER_FAILED}" != 0 || "${_BASHTEST_NUM_FAIL}" != 0 || "${_BASHTEST_INIT_FAILED}" != 0 || "${_BASHTEST_DONE_FAILED}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]] || [[ -s "${_BASHTEST_FAILURE_FILE:-}" ]]; then
+                keep=1
+            fi
+        fi
+        if [[ "${keep}" == 0 ]]; then
+            rm -rf "${BASHTEST_TMPDIR}"
+        else
+            echo >&2 "Preserved test scratch directory: ${BASHTEST_TMPDIR}"
+        fi
     fi
     exit "${status}"
 }
@@ -323,6 +331,7 @@ trap 'exit 143' TERM
 mkdir -p "${TEST_TMPDIR:=/tmp/$(date "+%Y%m%dT%H%M%S")}"
 BASHTEST_TMPDIR="$(mktemp -d -p "${TEST_TMPDIR}")"
 declare -r BASHTEST_TMPDIR
+_BASHTEST_OWNS_TMPDIR=1
 # Descendant shells inherit this path, so expectation failures survive subshells.
 _BASHTEST_FAILURE_FILE="${BASHTEST_TMPDIR}/current-failure"
 : > "${_BASHTEST_FAILURE_FILE}"
@@ -693,6 +702,7 @@ function test_runner() {
     if [[ "${_BASHTEST_STRICT_COMMANDS}" == 1 ]]; then
         _bashtest_strict_check_context
         if [[ "${_BASHTEST_STRICT_CONTEXT_OK}" == 0 ]]; then
+            _BASHTEST_RUNNER_FAILED=1
             echo >&2 'ERROR: --strict-commands requires a standalone test_runner call, outside conditional or status-masking contexts.'
             _bashtest_xml_case error test_runner "Strict command checking is disabled by a conditional runner call."
             _BASHTEST_XML_RUNNING=0
@@ -701,6 +711,7 @@ function test_runner() {
         fi
     fi
     if ! _bashtest_selection_init; then
+        _BASHTEST_RUNNER_FAILED=1
         _bashtest_xml_case error test_runner "Invalid test selection or sharding configuration."
         _BASHTEST_XML_RUNNING=0
         _bashtest_xml_write || return 1
@@ -771,6 +782,7 @@ function test_runner() {
         _bashtest_xml_case error test_runner "No tests were run."
     fi
     if ! _bashtest_xml_write; then
+        _BASHTEST_RUNNER_FAILED=1
         echo >&2 "ERROR: Cannot write JUnit report: ${_BASHTEST_XML_PATH}"
         return 1
     fi
@@ -780,10 +792,12 @@ function test_runner() {
     echo >&2 "FAIL: ${_BASHTEST_NUM_FAIL}"
     echo "----------"
     if [[ "${_BASHTEST_INIT_FAILED}" -ne "0" ]]; then
+        _BASHTEST_RUNNER_FAILED=1
         echo >&2 "ERROR: Test initialization failed."
         return 1
     fi
     if [[ "${_BASHTEST_NUM_FAIL}" != "0" ]]; then
+        _BASHTEST_RUNNER_FAILED=1
         echo >&2 "ERROR: Some tests failed."
         if [[ "${_BASHTEST_SUGGEST_UPDATE}" -gt 0 ]]; then
             echo ""
@@ -793,10 +807,12 @@ function test_runner() {
         fi
         return 1
     elif [[ "${empty_shard}" == 0 && "${_BASHTEST_NUM_PASS}" == 0 ]]; then
+        _BASHTEST_RUNNER_FAILED=1
         echo >&2 "ERROR: No tests were run."
         return 2
     fi
     if [[ "${_BASHTEST_DONE_FAILED}" != "0" ]]; then
+        _BASHTEST_RUNNER_FAILED=1
         echo >&2 "ERROR: Test shutdown failed."
         return 1
     fi

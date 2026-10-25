@@ -218,4 +218,53 @@ PROBE
     expect_output_not_contains INIT "${output}"
 }
 
+# shellcheck disable=SC2317 # Functions are discovered by test_runner.
+test::scratch_retention() {
+    local root probe status expected output scratch mode retained
+    root="$(test_tmpdir retention)"
+    cat > "${root}/probe.sh" <<'PROBE'
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+printf '%s' "${BASHTEST_TMPDIR}" > "${SCRATCH_RECORD}"
+printf evidence > "${BASHTEST_TMPDIR}/evidence"
+test::test_init() { if [[ "${PROBE}" == setup ]]; then return 7; fi; }
+test::body() {
+    case "${PROBE}" in
+        failure) expect_eq yes no ;;
+        abort) exit 42 ;;
+        report) rmdir "${REPORT_DIRECTORY}" ;;
+    esac
+}
+test::test_done() { if [[ "${PROBE}" == teardown ]]; then return 7; fi; }
+test_runner
+PROBE
+    for probe in pass failure setup teardown abort report; do
+        for mode in failure never always; do
+            status=0
+            expected=1
+            [[ "${probe}" != pass ]] || expected=0
+            [[ "${probe}" != abort ]] || expected=42
+            output="$(_junit_probe PROBE="${probe}" SCRATCH_RECORD="${root}/scratch.path" \
+                REPORT_DIRECTORY="${root}/reports-${probe}-${mode}" GTEST_OUTPUT="xml:${root}/reports-${probe}-${mode}/result.xml" \
+                "${BASH}" "${root}/probe.sh" --keep-tmpdir="${mode}" 2>&1)" || status="${?}"
+            expect_eq "${expected}" "${status}"
+            if [[ "${probe}" == report ]]; then
+                expect_output_contains 'Cannot write JUnit report' "${output}"
+            fi
+            scratch="$(cat "${root}/scratch.path")"
+            retained=0
+            if [[ "${mode}" == always || ( "${mode}" == failure && "${expected}" != 0 ) ]]; then retained=1; fi
+            if [[ "${retained}" == 1 ]]; then
+                expect_success test -d "${scratch}"
+                expect_eq evidence "$(cat "${scratch}/evidence")"
+                expect_output_contains "Preserved test scratch directory: ${scratch}" "${output}"
+            else
+                expect_success test ! -e "${scratch}"
+                expect_output_not_contains 'Preserved test scratch directory:' "${output}"
+            fi
+        done
+    done
+}
+
 test_runner

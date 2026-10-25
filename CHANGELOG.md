@@ -1,5 +1,9 @@
 # 0.7.1
 
+* Retain scratch data for hook failures, aborts, invalid runner settings, and report
+  errors under `--keep-tmpdir=failure`, including handled runner failures. Preserve
+  original exit statuses and avoid cleanup of unresolved scratch paths.
+
 * Honor native Bazel test filters, sharding, and runner fail-fast. Validate filters
   and shard settings before hooks run, acknowledge shard support, keep reports
   local to each shard, and allow empty shards without masking an empty selection.
