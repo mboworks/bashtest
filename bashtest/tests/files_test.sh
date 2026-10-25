@@ -21,7 +21,7 @@ source "${mboworks_bashtest}"
 
 # shellcheck disable=SC2317 # Functions are discovered by test_runner.
 test::golden_paths_and_updates() {
-    local root golden result
+    local root golden result diagnostic status=0 line
     root="$(test_tmpdir golden)"
     mkdir -p "${root}/source/data" "${root}/output with spaces"
     golden="${root}/source/data/golden [1].txt"
@@ -31,9 +31,12 @@ test::golden_paths_and_updates() {
     expect_files_eq "${golden}" "${result}"
     printf 'new\n' > "${result}"
     # This verifier owns an isolated marker for intentionally failed expectations.
-    if (_BASHTEST_FAILURE_FILE="${root}/expected-mismatch"; expect_files_eq "${golden}" "${result}"); then
-        expect_eq failure success
-    fi
+    line=$((LINENO + 1))
+    diagnostic="$(_BASHTEST_FAILURE_FILE="${root}/expected-mismatch"; expect_files_eq "${golden}" "${result}" 2>&1)" || status="${?}"
+    expect_eq 1 "${status}"
+    expect_output_contains "${BASH_SOURCE[0]}:${line}: test failure" "${diagnostic}"
+    expect_output_contains '-old' "${diagnostic}"
+    expect_output_contains '+new' "${diagnostic}"
     expect_output_contains '+new' "$(cat "${result}.diff")"
     # A manifest-only lookup supplies the physical source path, while the
     # update destination must retain the logical workspace-relative path.

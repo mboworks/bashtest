@@ -27,6 +27,24 @@ The macro supports directory and manifest-only runfiles on Linux, macOS, and
 Windows x86-64 with an automatically provisioned MSYS2 runtime. See the root [installation requirements](../README.md#installation-and-requirements)
 for Windows setup and resolving data dependencies with `rlocation`.
 
+## Failure diagnostics
+
+Failed expectations print `source-file:line: test failure` on stderr before their
+value or command diagnostics. The location is the first assertion call outside
+the framework; if an assertion is inside a user-defined helper, it points into
+that helper. Locations remain available for assertions in subshells and command
+substitutions, and are included in JUnit failure text and captured stderr.
+
+`expect_files_eq` prints its unified diff on stderr whenever files differ, without
+requiring `--verbose`. The complete diff is also saved as `<result-file>.diff`.
+JUnit reports include the diff, so CI does not need access to a sandbox path to
+show what changed. Successful comparisons and successful golden updates do not
+print a failure location or diff. Verbose mode does not duplicate failure diffs.
+
+Strict mode's unhandled-command errors continue to identify the failed command
+and exit status. They do not claim a source line: Bash 3.2's `ERR` trap metadata
+can point at the function declaration rather than the failing command.
+
 ## Scratch retention
 
 `--keep-tmpdir=failure` is the default. It preserves the runner-owned

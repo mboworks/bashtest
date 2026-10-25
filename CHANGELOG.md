@@ -1,5 +1,9 @@
 # 0.7.1
 
+* Report source locations for failed expectations, including user helpers and
+  subshells. Print golden-file diffs on stderr by default and capture them in JUnit
+  failure reports, without duplicating diffs in verbose mode.
+
 * Retain scratch data for hook failures, aborts, invalid runner settings, and report
   errors under `--keep-tmpdir=failure`, including handled runner failures. Preserve
   original exit statuses and avoid cleanup of unresolved scratch paths.

@@ -48,6 +48,10 @@ Bazel's native `--test_filter` (extended regular expression), test sharding, and
 `--test_runner_fail_fast` are supported. See [selection and execution controls](bashtest/README.md#filtering-sharding-and-fail-fast)
 for filter precedence, shard assignment, and teardown behavior.
 
+Failed expectations include their source file and line. Golden-file failures
+print unified diffs on stderr and include them in JUnit reports without requiring
+`--verbose`; see [failure diagnostics](bashtest/README.md#failure-diagnostics).
+
 ### Example
 
 1) Write a test that sources bashtest.

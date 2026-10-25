@@ -194,6 +194,53 @@ test::commands() { expect_exit_code 3 helper; expect_eq changed "$state"; expect
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIsNotNone(self.report()['bad'].find('failure'))
 
+    def test_failed_expectations_report_the_assertion_source_line(self):
+        for command in ('expect_eq yes no', 'expect_ne same same', 'expect_success false',
+                        'expect_exit_code 2 true', 'expect_matches "[" text',
+                        'expect_not_matches "[" text'):
+            for output in (True, False):
+                with self.subTest(command=command, output=output):
+                    result = self.run_probe(f'test::body() {{\n    {command}\n    return 0\n}}', output=output)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    script = self.root / 'probe.sh'
+                    line = script.read_text().splitlines().index(f'    {command}') + 1
+                    location = f'{script}:{line}: test failure'
+                    self.assertIn(location.encode(), result.stderr)
+                    self.assertNotIn(location.encode(), result.stdout)
+                    if output:
+                        self.assertIn(location, self.report()['body'].find('failure').text)
+        helper = self.root / 'assertion helper with spaces.sh'
+        helper.write_text('helper() {\n    expect_eq yes no\n}\n')
+        result = self.run_probe('source "$HELPER"\ntest::wrapped() { helper; }', HELPER=str(helper))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(f'{helper}:2: test failure'.encode(), result.stderr)
+        self.assertIn(f'{helper}:2: test failure', self.report()['wrapped'].find('failure').text)
+
+    def test_subshell_assertions_keep_their_source_location(self):
+        for command in ('(expect_eq yes no)', 'local value; value="$(expect_eq yes no)"'):
+            result = self.run_probe(f'test::body() {{\n    {command}\n    return 0\n}}')
+            self.assertEqual(result.returncode, 1, result.stderr)
+            script = self.root / 'probe.sh'
+            line = script.read_text().splitlines().index(f'    {command}') + 1
+            self.assertIn(f'{script}:{line}: test failure', self.report()['body'].find('failure').text)
+
+    def test_golden_diff_is_in_stderr_and_xml_without_verbose(self):
+        golden = self.root / 'golden with spaces.txt'
+        actual = self.root / 'actual with spaces.txt'
+        golden.write_text('old <value> & text\n')
+        actual.write_text('new <value> & text\n')
+        for args in ((), ('--verbose',)):
+            result = self.run_probe('test::golden() { expect_files_eq "$GOLDEN" "$ACTUAL"; }',
+                                    *args, GOLDEN=str(golden), ACTUAL=str(actual))
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn(b'-old <value> & text', result.stderr)
+            self.assertEqual(result.stderr.count(b'+new <value> & text'), 1)
+            self.assertNotIn(b'+new <value> & text', result.stdout)
+            case = self.report()['golden']
+            self.assertIn('-old <value> & text', case.find('failure').text)
+            self.assertIn('+new <value> & text', case.find('system-err').text)
+            self.assertIn('+new <value> & text', Path(str(actual) + '.diff').read_text())
+
     def test_native_bazel_filter_and_explicit_override(self):
         body = 'test::alpha() { echo alpha_body; }\ntest::beta() { echo beta_body; }'
         for args, expected in (((), 'alpha'), (('--test_filter=^beta$',), 'beta'),
