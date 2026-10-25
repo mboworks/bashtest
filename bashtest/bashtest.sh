@@ -62,7 +62,8 @@ An explicit runner filter overrides that default. Sharding and
                                 `--sandbox_debug`.
 * -u --update `<workspace>`     Update golden files, assuming the `<workspace>`.
 * -v --verbose                  Show additional output while tests succeed or fail.
-                                Prints all test calls and file diffs.
+                                Includes successful assertion details. Failure
+                                locations and golden diffs always go to stderr.
 
 Note: If long test flags are denoted with '-'s, then '_' can also be used, e.g.
 '--test_filter' and '--test-filter' are both long forms for '-f'.
@@ -352,6 +353,20 @@ _bashtest_record_failure() {
     printf 'failure\n' >> "${_BASHTEST_FAILURE_FILE}"
 }
 
+# Find the first caller outside this library, preserving paths with spaces and
+# the source line of the assertion call rather than the runner's invocation.
+_bashtest_assertion_failure() {
+    _bashtest_record_failure
+    local depth=1
+    while (( depth < ${#BASH_SOURCE[@]} )); do
+        if [[ "${BASH_SOURCE[depth]}" != "${BASH_SOURCE[0]}" ]]; then
+            printf >&2 '%s:%s: test failure\n' "${BASH_SOURCE[depth]}" "${BASH_LINENO[depth-1]}"
+            break
+        fi
+        ((depth+=1))
+    done
+}
+
 _bashtest_reset_error() {
     _BASHTEST_HAS_ERROR=0
     : > "${_BASHTEST_FAILURE_FILE}"
@@ -472,14 +487,14 @@ _bashtest_execute() {
 expect_exit_code() {
     local expected="${1:-}" actual=0
     if [[ "${#}" -lt 2 || -z "${2:-}" || ! "${expected}" =~ ^(0|[1-9][0-9]{0,2})$ ]] || ((expected > 255)); then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 'Test failure: expect_exit_code requires a status in 0..255 and a command.'
         return 1
     fi
     shift
     "${@}" || actual="${?}"
     if [[ "${actual}" != "${expected}" ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 "Test failure: expected command exit ${expected}, got ${actual}: ${*}"
         return 1
     fi
@@ -898,7 +913,7 @@ expect_files_eq() {
     FILE_REL_OUTPUT="$(_bashtest_relative_path "${FILE_OUTPUT}")"
 
     if [[ ! -r "${FILE_GOLDEN}" ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: golden file readable."
@@ -906,7 +921,7 @@ expect_files_eq() {
         return 1
     fi
     if [[ ! -r "${FILE_RESULT}" ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: result file readable."
@@ -917,7 +932,7 @@ expect_files_eq() {
     diff -u --label "a/${FILE_REL_GOLDEN}" --label "b/${FILE_REL_GOLDEN}" \
         "${FILE_GOLDEN}" "${FILE_RESULT}" > "${FILE_OUTPUT}" 2>&1 || diff_status="${?}"
     if [[ "${diff_status}" -gt 1 ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 "ERROR: diff failed (status ${diff_status}); golden file was not updated."
         cat >&2 "${FILE_OUTPUT}"
         return 1
@@ -926,7 +941,7 @@ expect_files_eq() {
         if [[ -n "${_BASHTEST_UPDATE_GOLDEN}" ]]; then
             UPDATE_FILE="${_BASHTEST_UPDATE_GOLDEN}/${FILE_REL_GOLDEN}"
             if [[ ! -w "${UPDATE_FILE}" ]]; then
-                _bashtest_record_failure
+                _bashtest_assertion_failure
                 echo >&2 ""
                 echo >&2 "Test failure:"
                 echo >&2 "  Expected: golden file is writable."
@@ -942,7 +957,7 @@ expect_files_eq() {
                 echo "Updated golden file '${FILE_REL_GOLDEN}'."
                 return 0
             else
-                _bashtest_record_failure
+                _bashtest_assertion_failure
                 echo >&2 ""
                 echo >&2 "Test failure:"
                 echo >&2 "  Expected: golden file gets updated."
@@ -951,7 +966,7 @@ expect_files_eq() {
                 return 1  # Technically we die, but that could be an option.
             fi
         fi
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         _BASHTEST_SUGGEST_UPDATE=1
         echo >&2 ""
         echo >&2 "Test failure:"
@@ -959,11 +974,9 @@ expect_files_eq() {
         echo >&2 "  Golden:  '${FILE_REL_GOLDEN}'"
         echo >&2 "  Result:  '${FILE_REL_RESULT}'"
         echo >&2 "  Diff:    '${FILE_REL_OUTPUT}'"
-        if [[ -n "${_BASHTEST_VERBOSE}" ]]; then
-            echo >&2 "Diff output:"
-            cat "${FILE_OUTPUT}" 2>&1
-            echo >&2 "----------------------------------------"
-        fi
+        echo >&2 "Diff output:"
+        cat >&2 "${FILE_OUTPUT}"
+        echo >&2 "----------------------------------------"
         return 1
     fi
     if [[ -n "${_BASHTEST_VERBOSE}" ]]; then
@@ -995,7 +1008,7 @@ expect_eq() {
         TEXT_RESULT_OUT="${TEXT_RESULT_OUT:0:47}..."
     fi
     if [[ "${TEXT_GOLDEN}" != "${TEXT_RESULT}" ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: strings are equal:"
@@ -1033,7 +1046,7 @@ expect_ne() {
         TEXT_RESULT_OUT="${TEXT_RESULT_OUT:0:47}..."
     fi
     if [[ "${TEXT_GOLDEN}" == "${TEXT_RESULT}" ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: strings are different:"
@@ -1071,7 +1084,7 @@ expect_contains() {
         fi
         return 0
     else
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: element is present in array:"
@@ -1100,7 +1113,7 @@ expect_not_contains() {
         fi
         return 0
     else
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: element is NOT present in array:"
@@ -1143,7 +1156,7 @@ _bashtest_ere_match() {
 }
 
 _bashtest_invalid_regex() {
-    _bashtest_record_failure
+    _bashtest_assertion_failure
     echo >&2 ""
     echo >&2 "Test failure:"
     echo >&2 "  Invalid extended regular expression: '${1}'."
@@ -1170,7 +1183,7 @@ expect_matches() {
             _bashtest_invalid_regex "${REGEX}"
             return 1
         fi
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text matches regex:"
@@ -1198,7 +1211,7 @@ expect_not_matches() {
     local regex_status=0
     _bashtest_ere_match "${REGEX}" "${TEXT}" || regex_status="${?}"
     if [[ "${regex_status}" == 0 ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text does NOT match regex:"
@@ -1243,7 +1256,7 @@ expect_output_contains() {
         fi
         return 0
     else
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text contains substring:"
@@ -1269,7 +1282,7 @@ expect_output_not_contains() {
     shift
     TEXT_OUT="$(_bashtest_ellipsize "${TEXT}")"
     if [[ "${TEXT}" == *"${SUBSTR}"* ]]; then
-        _bashtest_record_failure
+        _bashtest_assertion_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text does NOT contain substring:"
@@ -1361,7 +1374,7 @@ expect_pcre_matches() {
         fi
         return 0
     fi
-    _bashtest_record_failure
+    _bashtest_assertion_failure
     echo >&2 ""
     echo >&2 "Test failure:"
     if [[ "${rc}" == "3" ]]; then
@@ -1400,7 +1413,7 @@ expect_pcre_not_matches() {
         fi
         return 0
     fi
-    _bashtest_record_failure
+    _bashtest_assertion_failure
     echo >&2 ""
     echo >&2 "Test failure:"
     if [[ "${rc}" == "3" ]]; then
