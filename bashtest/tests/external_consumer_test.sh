@@ -18,14 +18,19 @@
 # Run outside a Bazel test: this creates and builds a separate consumer module.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=bashtest/tests/ci_support.sh
+source "${repo}/bashtest/tests/ci_support.sh"
 # The override consumes this checkout, including unreleased development versions.
 version="$(sed -nE 's/.*version = "([^"]+)".*/\1/p' "${repo}/MODULE.bazel" | head -n1)"
 root="$(mktemp -d)"
 cleanup() {
+    local status="${?}"
+    ci_failure_logs "${status}" "${PWD}"
     # Windows cannot remove a directory while it is a process working directory.
     bazel shutdown >/dev/null 2>&1 || true
     cd "${repo}"
     rm -rf "${root}"
+    exit "${status}"
 }
 trap cleanup EXIT
 case "${OSTYPE}" in
@@ -65,11 +70,11 @@ test_runner
 EOF
 # Also run the framework's own suite as an external dependency, as BCR does.
 # A standalone consumer test alone cannot catch root-workspace assumptions in it.
-bazel test --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
+ci_bazel external-full success test --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
 # A filtered/sharded meta-test must not leak its settings into verifier fixtures.
-bazel test --enable_runfiles=no --test_filter='^junit_cases_and_failures$' \
+ci_bazel external-meta-shards success test --enable_runfiles=no --test_filter='^junit_cases_and_failures$' \
     --test_sharding_strategy=forced=5 @framework//bashtest/tests:junit_test
-bazel run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
+ci_bazel external-run success run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
 
 # Exercise both documented update spellings with a workspace path containing spaces.
 # Separate MSYS2 installations have different /tmp mounts. Cross the native
@@ -79,10 +84,10 @@ case "${OSTYPE}" in
     msys*|cygwin*) workspace="$(cygpath -am "${workspace}")" ;;
 esac
 printf 'stale\n' > golden.txt
-bazel run --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}" --keep-tmpdir=never
+ci_bazel external-update-long success run --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]
 printf 'stale again\n' > golden.txt
-bazel run --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
+ci_bazel external-update-short success run --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
 [[ "$(cat golden.txt)" == 'hello world' ]]
 
 # Verify that Bazel collects per-function failure XML, rather than its fallback
@@ -127,7 +132,7 @@ EOF
         junit_targets+=(//:junit_sh_failure_test)
         ;;
 esac
-if bazel test --enable_runfiles=no "${junit_targets[@]}" > junit_failure.log 2>&1; then
+if ci_bazel external-junit-failure failure test --enable_runfiles=no "${junit_targets[@]}" > junit_failure.log 2>&1; then
     echo >&2 'ERROR: intentionally failing JUnit fixtures passed'
     exit 1
 fi
@@ -186,8 +191,8 @@ EOF
         selection_targets+=(//:selection_sh_test)
         ;;
 esac
-bazel test --enable_runfiles=no --test_filter='^(alpha|gamma)$' "${selection_targets[@]}"
-bazel test --enable_runfiles=no --test_filter='^(alpha|gamma)$' \
+ci_bazel external-filter success test --enable_runfiles=no --test_filter='^(alpha|gamma)$' "${selection_targets[@]}"
+ci_bazel external-shards success test --enable_runfiles=no --test_filter='^(alpha|gamma)$' \
     --test_sharding_strategy=forced=5 "${selection_targets[@]}"
 for target in "${selection_targets[@]}"; do
     reports=("${junit_logs}/${target#//:}"/shard_*/test.xml)
@@ -201,7 +206,7 @@ for target in "${selection_targets[@]}"; do
     [[ "${alpha}" == 1 && "${gamma}" == 1 && "${empty}" == 2 ]]
     echo "[SHARDING VERIFIED] ${target}: five reports, each selected case once, two empty reports"
 done
-if bazel test --enable_runfiles=no --test_runner_fail_fast --test_env=FAIL_CASE=alpha \
+if ci_bazel external-fail-fast failure test --enable_runfiles=no --test_runner_fail_fast --test_env=FAIL_CASE=alpha \
     "${selection_targets[@]}" > selection_failure.log 2>&1; then
     echo >&2 'ERROR: intentionally failing fail-fast fixtures passed'
     exit 1
@@ -258,7 +263,7 @@ EOF
         interrupted_targets+=(//:interrupted_sh_test)
         ;;
 esac
-if bazel test --enable_runfiles=no --test_timeout=10 "${interrupted_targets[@]}" > interrupted.log 2>&1; then
+if ci_bazel external-timeout failure test --enable_runfiles=no --test_timeout=10 "${interrupted_targets[@]}" > interrupted.log 2>&1; then
     echo >&2 'ERROR: intentionally hanging fixtures passed'
     exit 1
 fi

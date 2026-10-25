@@ -18,13 +18,18 @@
 # Integration test: distinct default and test execution platforms, external module.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=bashtest/tests/ci_support.sh
+source "${repo}/bashtest/tests/ci_support.sh"
 # The override consumes this checkout, including unreleased development versions.
 version="$(sed -nE 's/.*version = "([^"]+)".*/\1/p' "${repo}/MODULE.bazel" | head -n1)"
 root="$(mktemp -d)"
 cleanup() {
+    local status="${?}"
+    ci_failure_logs "${status}" "${PWD}"
     bazel shutdown >/dev/null 2>&1 || true
     cd "${repo}"
     rm -rf "${root}"
+    exit "${status}"
 }
 trap cleanup EXIT
 case "${OSTYPE}" in
@@ -98,14 +103,14 @@ test::configuration() {
 test_runner
 EOF
 flags=("--extra_execution_platforms=//:ordinary_exec,//:test_exec" --enable_runfiles=no)
-bazel test "${flags[@]}" --test_output=errors //:consumer_test
-bazel run "${flags[@]}" //:consumer_test -- --keep-tmpdir=never
-if bazel build "${flags[@]}" //:invalid_tool_test >invalid.log 2>&1; then
+ci_bazel tools-test success test "${flags[@]}" --test_output=errors //:consumer_test
+ci_bazel tools-run success run "${flags[@]}" //:consumer_test -- --keep-tmpdir=never
+if ci_bazel tools-non-executable failure build "${flags[@]}" //:invalid_tool_test >invalid.log 2>&1; then
     echo >&2 'ERROR: non-executable tool was accepted'
     exit 1
 fi
 grep -F 'tools requires an executable target' invalid.log | sed 's/^/[EXPECTED FAILURE: non-executable tool] /'
-if bazel build "${flags[@]}" //:collision_test >collision.log 2>&1; then
+if ci_bazel tools-collision failure build "${flags[@]}" //:collision_test >collision.log 2>&1; then
     echo >&2 'ERROR: conflicting environment variable was accepted'
     exit 1
 fi

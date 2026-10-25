@@ -17,6 +17,17 @@ class InfrastructureTest(unittest.TestCase):
         self.assertIn('needs: [release-site-tests, pre-commit, test]', workflow)
         self.assertIn('os: [ubuntu-latest, macos-latest, windows-latest]', workflow)
 
+    def test_test_diagnostics_survive_failed_steps(self):
+        workflow = (Path(__file__).parents[1] / '.github/workflows/main.yml').read_text()
+        self.assertIn('name: Summarize JUnit results\n      if: always()', workflow)
+        self.assertIn('name: Retain test diagnostics\n      if: always()', workflow)
+        self.assertIn('name: test-results-${{ matrix.os }}', workflow)
+        self.assertIn('retention-days: 7', workflow)
+        self.assertIn('ci_reports.py run --output "${BASHTEST_CI_REPORTS}/root-default"', workflow)
+        self.assertIn('ci_reports.py run --output "${BASHTEST_CI_REPORTS}/root-manifest"', workflow)
+        self.assertNotIn('pull_request_target', workflow)
+        self.assertNotIn('checks: write', workflow)
+
     def test_release_uploads_before_immutable_publication(self):
         workflow = (Path(__file__).parents[1] / '.github/workflows/release.yml').read_text()
         self.assertIn('release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7', workflow)

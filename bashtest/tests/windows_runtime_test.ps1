@@ -1,6 +1,21 @@
 # Verify that tests bootstrap their own Bash and Unix utilities.
 $ErrorActionPreference = 'Stop'
 $bazel = (Get-Command bazel).Source
+# Keep an absolute Python path for CI reporting after Unix tools and Python are
+# removed from PATH. Python is a CI dependency, not a bashtest runtime dependency.
+$python = $null
+if ($env:BASHTEST_CI_REPORTS) {
+    $python = (Get-Command python).Source
+    $env:BASHTEST_CI_PYTHON = $python.Replace('\', '/')
+}
+function Invoke-TestBazel([string] $name, [string[]] $bazelArgs) {
+    if ($env:BASHTEST_CI_REPORTS) {
+        & $python tools/ci_reports.py run --output "$env:BASHTEST_CI_REPORTS/$name" -- $bazel @bazelArgs
+    } else {
+        & $bazel @bazelArgs
+    }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 # Hosted runners install Bazelisk through npm; retain its Node launcher only.
 $nodeDirectory = Split-Path (Get-Command node).Source
 # Exclude System32 too: it can contain the WSL bash.exe forwarding stub.
@@ -10,12 +25,9 @@ $env:MSYS_NO_PATHCONV = '1'
 foreach ($name in @('bash', 'grep', 'sed', 'diff')) {
     if (Get-Command $name -CommandType Application -ErrorAction SilentlyContinue) { throw "Unexpected installed tool: $name" }
 }
-& $bazel test //...
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $bazel test --enable_runfiles=no //...
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $bazel run --enable_runfiles=no //bashtest/tests:runtime_test
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Invoke-TestBazel 'root-default' @('test', '//...')
+Invoke-TestBazel 'root-manifest' @('test', '--enable_runfiles=no', '//...')
+Invoke-TestBazel 'root-runtime' @('run', '--enable_runfiles=no', '//bashtest/tests:runtime_test')
 # Drive the existing external-consumer tests with the downloaded interpreter.
 $execRoot = & $bazel info execution_root
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

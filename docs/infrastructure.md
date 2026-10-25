@@ -25,6 +25,47 @@ Use these measurements before introducing stricter budgets or custom eviction. A
 inventory is reported without replacing test failures. This inventory includes all refs and
 may briefly lag post-job cache uploads; verify later runs before claiming savings.
 
+### Test diagnostics
+
+Every test-matrix job retains a `test-results-OS` Actions artifact for seven days,
+including on failure. `tools/ci_reports.py run` saves each Bazel command's console
+log and build events, then copies the `test.log` and `test.xml` files named by that
+invocation's test-result events. Root runfiles modes, external consumers, shards,
+and retry attempts remain separate. Results are copied before another command can
+overwrite them and before consumer cleanup removes its temporary workspace. Stale
+results in `bazel-testlogs` are not collected. Missing local outputs and malformed
+build events are reported as collection errors; remote-only output URIs are not
+downloaded by this local-CI collector.
+
+An always-run step writes per-invocation JUnit counts and limited failure/error
+excerpts to the job summary. It counts actual cases rather than trusting aggregate
+XML attributes, labels intentionally failing fixture commands, and fails on
+unexpected command outcomes, collection errors, or malformed JUnit XML. The
+consumer scripts still verify each expected failure's precise behavior and print
+captured negative-test logs if those checks fail. A missing report is shown as
+such, leaving the original Bazel command status authoritative.
+
+Summary names and excerpts are HTML-escaped, diagnostics are placed in literal
+`pre` blocks, and only 20 bounded excerpts and 200 invocation rows are displayed.
+XML files above 8 MiB remain in the artifact but are not parsed for the summary;
+DTD/entity declarations are rejected. Complete reports and logs are retained.
+Summary generation uses Python's standard library and `GITHUB_STEP_SUMMARY`, with
+no PR comments, check-writing token, or privileged follow-up workflow. Python is
+a CI reporting dependency, including an absolute interpreter path when Windows
+validation strips PATH; it is not a requirement for running bashtest.
+
+To reproduce capture locally, use a fresh output directory for each invocation:
+
+```sh
+python3 tools/ci_reports.py run --output /tmp/bashtest-reports/root -- bazel test //...
+BASHTEST_CI_REPORTS=/tmp/bashtest-reports bash bashtest/tests/external_consumer_test.sh
+python3 tools/ci_reports.py summary /tmp/bashtest-reports --output /tmp/bashtest-summary.md
+```
+
+Without `BASHTEST_CI_REPORTS`, the standalone consumer scripts run Bazel directly.
+Artifact retention after forced runner termination is limited to files already
+written; ordinary Bazel test timeouts are collected and verified explicitly.
+
 ## Publishing
 
 The release publisher uses trusted main tooling and the tagged documentation snapshot.
