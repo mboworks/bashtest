@@ -32,11 +32,12 @@ Invoke-TestBazel 'root-default' @('test', '//...')
 Invoke-TestBazel 'root-manifest' @('test', '--enable_runfiles=no', '//...')
 Invoke-TestBazel 'root-runtime' @('run', '--enable_runfiles=no', '//bashtest/tests:runtime_test')
 # Drive the existing external-consumer tests with the downloaded interpreter.
-$execRoot = & $bazel info execution_root
+# Resolve the downloaded source, not an execroot link pruned by later builds.
+$outputBase = & $bazel info output_base
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $bashFile = & $bazel cquery '@bashtest_windows_runtime//:usr/bin/bash.exe' --output=files
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$bash = Join-Path $execRoot $bashFile
+$bash = Join-Path $outputBase $bashFile
 $env:PATH = "$(Split-Path $bash);$(Split-Path $bazel);$env:PATH"
 & $bash bashtest/tests/external_consumer_test.sh
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
