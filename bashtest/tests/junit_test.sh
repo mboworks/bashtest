@@ -233,7 +233,7 @@ test::body() {
     case "${PROBE}" in
         failure) expect_eq yes no ;;
         abort) exit 42 ;;
-        report) rmdir "${REPORT_DIRECTORY}" ;;
+        report) mv "${REPORT_DIRECTORY}" "${REPORT_DIRECTORY}.moved" ;;
     esac
 }
 test::test_done() { if [[ "${PROBE}" == teardown ]]; then return 7; fi; }
@@ -265,6 +265,61 @@ PROBE
             fi
         done
     done
+}
+
+# shellcheck disable=SC2317 # Functions are discovered by test_runner.
+test::live_output_and_progress_report() {
+    local root pid attempt output observed=0 status=0
+    root="$(test_tmpdir live)"
+    cat > "${root}/probe.sh" <<'PROBE'
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+test::live() {
+    # Framework capture workers must not cause an unqualified wait to hang.
+    wait
+    if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 3) )); then
+        local status=0
+        wait -n || status="${?}"
+        expect_eq 127 "${status}"
+    fi
+    printf '%s' live_stdout_token
+    printf '%s' live_stderr_token >&2
+    while [[ ! -e "${RELEASE}" ]]; do sleep 0.02; done
+}
+test::server_start() {
+    "${BASH}" -c 'exec sleep 10' &
+    server_pid="${!}"
+}
+test::server_use() { kill -0 "${server_pid}"; echo service_alive; }
+test::test_done() { kill "${server_pid}"; wait "${server_pid}" || :; }
+test_runner
+PROBE
+    _junit_probe "GTEST_OUTPUT=xml:${root}/result.xml" "RELEASE=${root}/release" \
+        "${BASH}" "${root}/probe.sh" > "${root}/stdout" 2> "${root}/stderr" &
+    pid="${!}"
+    for ((attempt=0; attempt<200; attempt++)); do
+        if grep -F live_stdout_token "${root}/stdout" >/dev/null && grep -F live_stderr_token "${root}/stderr" >/dev/null; then
+            observed=1
+            break
+        fi
+        sleep 0.05
+    done
+    expect_eq 1 "${observed}"
+    output="$(cat "${root}/result.xml")"
+    expect_output_contains 'provisional while it is running' "${output}"
+    expect_output_contains 'tests="1" failures="0" errors="1"' "${output}"
+    # Always release the fixture, including after a failed expectation above.
+    : > "${root}/release"
+    wait "${pid}" || status="${?}"
+    expect_eq 0 "${status}"
+    expect_eq 1 "$(grep -c live_stdout_token "${root}/stdout")"
+    expect_eq 1 "$(grep -c live_stderr_token "${root}/stderr")"
+    output="$(cat "${root}/result.xml")"
+    expect_output_contains 'tests="3" failures="0" errors="0"' "${output}"
+    expect_output_contains service_alive "$(cat "${root}/stdout")"
+    expect_output_contains live_stdout_token "${output}"
+    expect_output_contains live_stderr_token "${output}"
 }
 
 test_runner

@@ -3,6 +3,9 @@
 """Parse actual runner reports and verify JUnit/GoogleTest output contracts."""
 
 import os
+import selectors
+import signal
+import time
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,7 +23,7 @@ class JunitTest(unittest.TestCase):
         self.root = Path(temporary.name)
         self.xml = self.root / 'bazel result.xml'
 
-    def run_probe(self, body, *args, output=True, runner='test_runner', **environment):
+    def run_probe(self, body, *args, output=True, runner='test_runner', background=False, **environment):
         script = self.root / 'probe.sh'
         script.write_text('set -euo pipefail\nsource "$LIBRARY"\n' + body + '\n' + runner + '\n')
         env = {key: value for key, value in os.environ.items()
@@ -31,6 +34,9 @@ class JunitTest(unittest.TestCase):
         if output:
             env['XML_OUTPUT_FILE'] = str(self.xml)
         env.update(environment)
+        if background:
+            return subprocess.Popen(['bash', str(script), *args], cwd=self.root, env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         return subprocess.run(['bash', str(script), *args], cwd=self.root, env=env,
                               capture_output=True, timeout=10)
 
@@ -241,6 +247,155 @@ test::commands() { expect_exit_code 3 helper; expect_eq changed "$state"; expect
             self.assertIn('+new <value> & text', case.find('system-err').text)
             self.assertIn('+new <value> & text', Path(str(actual) + '.diff').read_text())
 
+    def observe_live_output(self, process):
+        captured = {'stdout': b'', 'stderr': b''}
+        deadline = time.monotonic() + 5
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ, 'stdout')
+            selector.register(process.stderr, selectors.EVENT_READ, 'stderr')
+            while time.monotonic() < deadline:
+                for key, _ in selector.select(timeout=0.1):
+                    chunk = os.read(key.fd, 65536)
+                    if chunk:
+                        captured[key.data] += chunk
+                    else:
+                        selector.unregister(key.fileobj)
+                if b'live_stdout_token' in captured['stdout'] and b'live_stderr_token' in captured['stderr']:
+                    return captured
+                if process.poll() is not None:
+                    break
+        self.fail(f'Output was not live: {captured}; process status={process.poll()}')
+
+    def stop_probe(self, process):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate(timeout=5)
+
+    @unittest.skipUnless(os.name == 'posix', 'requires POSIX pipe selectors and process groups')
+    def test_output_is_live_and_provisional_report_becomes_final(self):
+        release = self.root / 'release'
+        process = self.run_probe('''
+state=initial
+test::test_init() { state=setup; }
+test::a_live() {
+    wait
+    if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 3) )); then
+        local status=0
+        wait -n || status=$?
+        expect_eq 127 "$status"
+    fi
+    expect_eq setup "$state"
+    state=changed
+    printf '%s' live_stdout_token
+    printf '%s' live_stderr_token >&2
+    while [[ ! -e "$RELEASE" ]]; do sleep 0.02; done
+}
+test::b_after() { expect_eq changed "$state"; }
+''', background=True, RELEASE=str(release))
+        self.addCleanup(self.stop_probe, process)
+        captured = self.observe_live_output(process)
+        self.assertIsNone(process.poll())
+        provisional = self.report()
+        self.assertEqual(set(provisional), {'a_live'})
+        self.assertIn('provisional', provisional['a_live'].find('error').attrib['message'])
+        release.touch()
+        out, err = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 0, captured['stderr'] + err)
+        self.assertEqual((captured['stdout'] + out).count(b'live_stdout_token'), 1)
+        self.assertEqual((captured['stderr'] + err).count(b'live_stderr_token'), 1)
+        final = self.report()
+        self.assertEqual(set(final), {'a_live', 'b_after'})
+        self.assertIsNone(final['a_live'].find('error'))
+        self.assertIn('live_stdout_token', final['a_live'].find('system-out').text)
+        self.assertIn('live_stderr_token', final['a_live'].find('system-err').text)
+
+    @unittest.skipUnless(os.name == 'posix', 'requires POSIX pipe selectors and process groups')
+    def test_sigkill_leaves_active_case_error_and_live_diagnostics(self):
+        for active in ('b_hanging', 'test_init', 'test_done'):
+            with self.subTest(active=active):
+                process = self.run_probe(f'''
+test::a_done() {{ :; }}
+test::{active}() {{
+    echo live_stdout_token
+    echo live_stderr_token >&2
+    while :; do sleep 1; done
+}}
+''', background=True)
+                self.addCleanup(self.stop_probe, process)
+                captured = self.observe_live_output(process)
+                self.assertIsNone(process.poll())
+                os.kill(process.pid, signal.SIGKILL)
+                process.communicate(timeout=5)
+                self.assertEqual(process.returncode, -signal.SIGKILL)
+                cases = self.report()
+                expected = {active} if active == 'test_init' else {'a_done', active}
+                self.assertEqual(set(cases), expected)
+                if active != 'test_init':
+                    self.assertIsNone(cases['a_done'].find('error'))
+                self.assertIn('completion was not recorded', cases[active].find('error').attrib['message'])
+                self.assertIn(b'live_stdout_token', captured['stdout'])
+                self.assertIn(b'live_stderr_token', captured['stderr'])
+
+    @unittest.skipUnless(os.name == 'posix', 'requires POSIX process-group cleanup')
+    def test_setup_service_can_keep_logging_until_teardown(self):
+        ready = self.root / 'service ready'
+        process = self.run_probe('''
+test::test_init() {
+    "$BASH" -c 'echo service_started; : > "$READY"; exec sleep 30' &
+    service_pid=$!
+    while [[ ! -e "$READY" ]]; do sleep 0.02; done
+}
+test::a_alive() { kill -0 "$service_pid"; }
+test::b_alive() { kill -0 "$service_pid"; }
+test::test_done() { kill "$service_pid"; wait "$service_pid" || :; }
+''', background=True, READY=str(ready))
+        self.addCleanup(self.stop_probe, process)
+        out, err = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 0, err)
+        self.assertEqual(out.count(b'service_started'), 1)
+        cases = self.report()
+        self.assertEqual(set(cases), {'a_alive', 'b_alive'})
+        self.assertTrue(all(case.find('error') is None for case in cases.values()))
+
+    def test_large_output_is_exact_when_sigpipe_is_ignored(self):
+        payload = (b'x' * 127 + b'\n') * 16384
+        path = self.root / 'large output'
+        path.write_bytes(payload)
+        result = self.run_probe("trap '' PIPE\ntest::large() { cat \"$PAYLOAD\"; }", PAYLOAD=str(path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count(b'x' * 127 + b'\n'), 16384)
+        self.assertNotIn(b'Broken pipe', result.stderr)
+        self.assertEqual(self.report()['large'].find('system-out').text, payload.decode())
+
+    def test_capture_worker_failure_is_a_reported_error(self):
+        tools = self.root / 'fake bin'
+        tools.mkdir()
+        head = tools / 'head'
+        head.write_text('#!/usr/bin/env bash\ncat > /dev/null\nexit 3\n')
+        head.chmod(0o755)
+        result = self.run_probe('PATH="$FAKE_BIN:$PATH"\ntest::body() { echo payload; }', FAKE_BIN=str(tools))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(b'Cannot capture test output completely', result.stderr)
+        self.assertIn(b'head=3', result.stderr)
+        self.assertIsNotNone(self.report()['body'].find('error'))
+
+    def test_capture_worker_without_acknowledgement_does_not_hang(self):
+        # Fault injection: a worker exits before it can publish completion.
+        result = self.run_probe('_bashtest_capture_worker() { trap - EXIT; sleep 0.05; return 7; }\n'
+                                'test::body() { :; }')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(b'Cannot start test output capture', result.stderr)
+        self.assertIsNotNone(self.report()['test_runner'].find('error'))
+
+    def test_progress_report_failure_stops_the_case(self):
+        result = self.run_probe('mktemp() { return 1; }\ntest::body() { echo must_not_run; }')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(b'Cannot write JUnit progress report', result.stderr)
+        self.assertNotIn(b'must_not_run', result.stdout)
+        self.assertIn(b'Preserved test scratch directory:', result.stderr)
+
     def test_native_bazel_filter_and_explicit_override(self):
         body = 'test::alpha() { echo alpha_body; }\ntest::beta() { echo beta_body; }'
         for args, expected in (((), 'alpha'), (('--test_filter=^beta$',), 'beta'),
@@ -427,7 +582,7 @@ test::bytes() {
 
     def test_write_failure_after_passing_tests_remains_failure(self):
         directory = self.root / 'deleted directory'
-        result = self.run_probe('test::pass() { rmdir "$REPORT_DIRECTORY"; }',
+        result = self.run_probe('test::pass() { mv "$REPORT_DIRECTORY" "$REPORT_DIRECTORY.moved"; }',
                                 f'--gtest_output=xml:{directory}/result.xml',
                                 REPORT_DIRECTORY=str(directory))
         self.assertEqual(result.returncode, 1, result.stderr)
@@ -482,7 +637,7 @@ test::bytes() {
         record = self.root / 'scratch.path'
         directory = self.root / 'report directory'
         prefix = 'printf "%s" "$BASHTEST_TMPDIR" > "$SCRATCH_RECORD"\n'
-        result = self.run_probe(prefix + 'test::body() { rmdir "$REPORT_DIRECTORY"; }',
+        result = self.run_probe(prefix + 'test::body() { mv "$REPORT_DIRECTORY" "$REPORT_DIRECTORY.moved"; }',
                                 f'--gtest_output=xml:{directory}/result.xml',
                                 SCRATCH_RECORD=str(record), REPORT_DIRECTORY=str(directory))
         self.assertEqual(result.returncode, 1, result.stderr)

@@ -50,7 +50,8 @@ for filter precedence, shard assignment, and teardown behavior.
 
 Failed expectations include their source file and line. Golden-file failures
 print unified diffs on stderr and include them in JUnit reports without requiring
-`--verbose`; see [failure diagnostics](bashtest/README.md#failure-diagnostics).
+`--verbose`. Output streams live while reports capture it, and an interrupted run
+leaves a provisional report identifying the last active function; see [failure diagnostics](bashtest/README.md#failure-diagnostics).
 
 ### Example
 
@@ -109,7 +110,8 @@ hand-rolled pipelines.
 ## Installation and requirements
 
 Linux and macOS require Bash and Unix utilities (`coreutils`, `diff`, `sed`, and
-`grep`); PCRE assertions need a supported PCRE tool.
+`grep`); JUnit reporting also uses `head`, `tail`, `tee`, and `wc` (plus the system
+`ps` on macOS). PCRE assertions need a supported PCRE tool.
 
 On Windows x86-64, `bashtest` automatically downloads a pinned MSYS2 runtime,
 including Bash, coreutils, diffutils, grep with PCRE support, sed, and their DLLs.

@@ -80,7 +80,8 @@ A failed expectation remains a failure even if its return status is handled or
 followed by a successful command. This includes expectations in command
 substitutions, `(subshells)`, and background jobs that the test waits for.
 `test_has_error` sees these failures in the parent shell. Tests must wait for
-background work before returning. Each test and lifecycle hook starts with a
+background assertion work before returning; long-lived services may instead
+be stopped in teardown. Each test and lifecycle hook starts with a
 fresh error state; failures do not leak into subsequent cases.
 
 By default, ordinary commands follow Bash's final-return-status semantics.
@@ -207,10 +208,19 @@ keep the location independent of Bazel's working directory. An empty
 `GTEST_OUTPUT` or `--gtest_output=` disables reporting. JSON output is unsupported;
 an unsupported format or failure to write a report makes the test fail.
 
-With reporting enabled, function output is buffered and replayed after each
-function, while functions continue to run in the same shell. Setup and teardown
-state remains visible to the tests. Failed `test_init` and `test_done` hooks appear
-as additional error cases; successful hooks do not count as test cases. Filters
+With reporting enabled, function output streams to its original stdout/stderr
+while a copy is captured for the report. Standard `head`, `tail`, `tee`, and `wc` tools
+must be available on `PATH`; they are included in the managed Windows runtime.
+macOS also uses its system `ps` to detect an exited, unreaped coordinator.
+Functions still run in the same shell, and setup/teardown state remains visible
+to the tests. Capture workers do not
+join a test's `wait` or `wait -n`. Background services may keep writing across
+setup, cases, and teardown; captured output is attributed to the function active
+when it was written. Output between functions is still streamed. Tests should
+wait for background assertions before returning and stop services in teardown.
+A capture failure makes the test fail as a reporting error rather than silently
+losing output. Failed `test_init` and `test_done` hooks appear as additional error
+cases; successful hooks do not count as test cases. Filters
 produce skipped cases, and `--no-skip` turns runtime skip requests into failures.
 An assertion failure or nonzero function return always takes precedence over a
 skip request, even if the skip happens after the failure. Invalid extended
@@ -219,9 +229,20 @@ syntax-error diagnostic.
 The existing exit code 2 for no passing or failing cases is retained and recorded
 as a `test_runner` error. An early exit or a catchable signal during a function
 records that function as an error and retains a nonzero exit status; `exit 0`
-inside a function is also an error because it aborts the runner. SIGKILL and
-machine termination cannot be handled; Bazel supplies its fallback reporting when
-no custom report exists. Reporting begins when `test_runner` is called.
+inside a function is also an error because it aborts the runner.
+
+Before each setup, test, or teardown function, the runner atomically writes a
+provisional report containing completed cases and an error for the function
+about to run. Its message explicitly labels the report provisional. A completed
+run replaces that checkpoint with final results. Termination without cleanup,
+such as SIGKILL, leaves the last written checkpoint identifying the function
+whose completion was not yet recorded. Readers detect coordinator death, drain
+a finite snapshot, and exit even without a stop request. Output already streamed
+remains in Bazel's test log; use
+`--test_output=streamed` to see output while Bazel runs. Catchable signals finalize
+the report with available output. A failed progress-report write prevents the
+function from running and fails the target. Reporting begins at `test_runner`;
+if termination happens before any report exists, Bazel supplies its fallback.
 
 Nested runner/verifier scripts should select their own output file, or disable
 reporting with `GTEST_OUTPUT=`, so an expected failure does not become the parent

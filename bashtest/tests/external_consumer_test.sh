@@ -217,3 +217,57 @@ for target in "${selection_targets[@]}"; do
     fi
     echo "[EXPECTED FAILURE: fail-fast fixture] ${target}: later cases skipped and teardown ran"
 done
+
+# Verify an actual Bazel timeout keeps the active function's custom report and
+# the last live diagnostic, on managed Windows as well as Unix.
+cat >> BUILD.bazel <<'EOF'
+bashtest(
+    name = "interrupted_test",
+    srcs = ["interrupted.sh"],
+    tags = ["manual"],
+)
+EOF
+cat > interrupted.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+# shellcheck disable=SC2317
+test::a_completed() { expect_eq ok ok; }
+# shellcheck disable=SC2317
+test::b_hanging() {
+    echo last_diagnostic_before_timeout >&2
+    while :; do sleep 1; done
+}
+test_runner
+EOF
+chmod +x interrupted.sh
+interrupted_targets=(//:interrupted_test)
+case "${OSTYPE}" in
+    msys*|cygwin*) ;;
+    *)
+        cat >> BUILD.bazel <<'EOF'
+sh_test(
+    name = "interrupted_sh_test",
+    srcs = ["interrupted.sh"],
+    data = ["@framework//bashtest:bashtest_sh"],
+    env = {"mboworks_bashtest": "$(rootpath @framework//bashtest:bashtest_sh)"},
+    tags = ["manual"],
+)
+EOF
+        interrupted_targets+=(//:interrupted_sh_test)
+        ;;
+esac
+if bazel test --enable_runfiles=no --test_timeout=10 "${interrupted_targets[@]}" > interrupted.log 2>&1; then
+    echo >&2 'ERROR: intentionally hanging fixtures passed'
+    exit 1
+fi
+for target in "${interrupted_targets[@]}"; do
+    grep -F "${target}" interrupted.log | grep -F TIMEOUT >/dev/null
+    report="${junit_logs}/${target#//:}/test.xml"
+    grep -F 'name="a_completed"' "${report}" >/dev/null
+    grep -F 'name="b_hanging"' "${report}" >/dev/null
+    grep -F '<error' "${report}" >/dev/null
+    grep -F last_diagnostic_before_timeout "${junit_logs}/${target#//:}/test.log" >/dev/null
+    echo "[EXPECTED FAILURE: timeout fixture] ${target}: active-case error report and live diagnostic retained"
+done
