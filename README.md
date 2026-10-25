@@ -42,6 +42,10 @@ locally or with `--sandbox_debug`.
 * special test function `test::test_init`: If present, then this function runs first! Tests will only be executed if it succeeds.
 * special test function `test::test_done`: If present, then this function runs last!
 
+Bazel's native `--test_filter` (extended regular expression), test sharding, and
+`--test_runner_fail_fast` are supported. See [selection and execution controls](bashtest/README.md#filtering-sharding-and-fail-fast)
+for filter precedence, shard assignment, and teardown behavior.
+
 ### Example
 
 1) Write a test that sources bashtest.

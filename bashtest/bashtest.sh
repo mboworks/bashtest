@@ -37,6 +37,10 @@ _BASHTEST_USAGE=$(cat <<'EOF'
 * bazel test `<test_target>` [ --test_arg=-f=`<pattern>` ] [ -v ] [ -u="${PWD}" ]
 * bazel run `<test_target>` -- [ -f=`<pattern>` ] [ -v ][ -u="${PWD}" ]
 
+Native Bazel --test_filter supplies the default regex via TESTBRIDGE_TEST_ONLY.
+An explicit runner filter overrides that default. Sharding and
+--test_runner_fail_fast are supported; teardown still runs after a case fails.
+
 ## Flags:
 
 * -f --test-filter `<pattern>`  A posix regular expression for tests to run,
@@ -44,7 +48,7 @@ _BASHTEST_USAGE=$(cat <<'EOF'
                                 is considered failing if no test was run.
 * --gtest-output `<xml[:path]>` Write JUnit XML (also accepts GTEST_OUTPUT).
                                 Bazel sets XML_OUTPUT_FILE automatically.
-* --gtest-filter                Like '-f' but uses glob patterns.
+* --gtest-filter                One Bash glob (not GoogleTest list/exclusion syntax).
 * --strict-commands             Record unhandled command failures using ERR traps.
                                 Requires a standalone test_runner call.
 * --no-skip                     Turn every `skip_test` into a failure. For an
@@ -166,7 +170,8 @@ EOF
 )
 
 _BASHTEST_REPORT_OUTPUT="${GTEST_OUTPUT-${XML_OUTPUT_FILE:+xml:${XML_OUTPUT_FILE}}}"
-_BASHTEST_FILTER_REGX=""
+_BASHTEST_FILTER_REGX="${TESTBRIDGE_TEST_ONLY:-}"
+_BASHTEST_FILTER_FROM_ENV=1
 _BASHTEST_FILTER_GLOB=""
 _BASHTEST_KEEP_TMPDIR="failure"
 _BASHTEST_UPDATE_GOLDEN=""
@@ -226,9 +231,17 @@ while getopts -- '-:f:hu:v' OPTION; do
         OPTERR="-${OPTION}"
     fi
     case "${OPTION}" in
-        f|test[-_]filter) _BASHTEST_FILTER_REGX="${OPTARG}" ;;
+        f|test[-_]filter|gtest[-_]filter)
+            if [[ "${_BASHTEST_FILTER_FROM_ENV}" == 1 ]]; then
+                _BASHTEST_FILTER_REGX=""
+                _BASHTEST_FILTER_FROM_ENV=0
+            fi
+            case "${OPTION}" in
+                gtest[-_]filter) _BASHTEST_FILTER_GLOB="${OPTARG}" ;;
+                *) _BASHTEST_FILTER_REGX="${OPTARG}" ;;
+            esac
+            ;;
         gtest[-_]output) _BASHTEST_REPORT_OUTPUT="${OPTARG}" ;;
-        gtest[-_]filter) _BASHTEST_FILTER_GLOB="${OPTARG}" ;;
         h|help) echo "${_BASHTEST_USAGE}"; exit 2 ;;
         keep[-_]tmpdir)
             case "${OPTARG}" in
@@ -546,25 +559,72 @@ _bashtest_xml_write() {
     } > "${temporary}" && mv -f "${temporary}" "${_BASHTEST_XML_PATH}"
 }
 
+# Match bare case names (without test::). Explicit regex/glob filters retain
+# their historical union semantics; no filters selects every case.
+_bashtest_selected() {
+    local name="${1}"
+    [[ -n "${_BASHTEST_FILTER_GLOB}${_BASHTEST_FILTER_REGX}" ]] || return 0
+    # shellcheck disable=SC2053 # This is intentionally a Bash glob.
+    if [[ -n "${_BASHTEST_FILTER_GLOB}" && ${name} == ${_BASHTEST_FILTER_GLOB} ]]; then
+        return 0
+    fi
+    [[ -n "${_BASHTEST_FILTER_REGX}" && ${name} =~ ${_BASHTEST_FILTER_REGX} ]]
+}
+
+_bashtest_skip_case() {
+    echo "[  SKIP  ] ${1}: ${2}"
+    ((_BASHTEST_NUM_SKIP+=1))
+    _bashtest_xml_case skipped "${1}" "${2}"
+}
+
+# Validate before any hooks run. Bounds avoid shell arithmetic overflow and
+# leading-zero/octal interpretation; Bazel supplies canonical decimal integers.
+_bashtest_selection_init() {
+    local status=0
+    if [[ -n "${_BASHTEST_FILTER_REGX}" ]]; then
+        _bashtest_ere_match "${_BASHTEST_FILTER_REGX}" "" || status="${?}"
+        if [[ "${status}" == 2 ]]; then
+            echo >&2 "ERROR: Invalid test filter extended regular expression: ${_BASHTEST_FILTER_REGX}"
+            return 1
+        fi
+    fi
+    _BASHTEST_TOTAL_SHARDS="${TEST_TOTAL_SHARDS-1}"
+    _BASHTEST_SHARD_INDEX="${TEST_SHARD_INDEX-0}"
+    local valid=0
+    if [[ "${_BASHTEST_TOTAL_SHARDS}" =~ ^[1-9][0-9]{0,8}$ && "${_BASHTEST_SHARD_INDEX}" =~ ^(0|[1-9][0-9]{0,8})$ && "${TEST_TOTAL_SHARDS+x}" == "${TEST_SHARD_INDEX+x}" ]]; then
+        if (( _BASHTEST_SHARD_INDEX < _BASHTEST_TOTAL_SHARDS )); then
+            valid=1
+        fi
+    fi
+    if [[ "${valid}" == 0 ]]; then
+        echo >&2 'ERROR: Invalid test shard configuration: require TEST_TOTAL_SHARDS > TEST_SHARD_INDEX >= 0 (decimal integers, at most 9 digits).'
+        return 1
+    fi
+    if [[ -n "${TEST_SHARD_STATUS_FILE:-}" ]]; then
+        local path="${TEST_SHARD_STATUS_FILE}"
+        case "${OSTYPE}" in
+            msys*|cygwin*) path="$(cygpath -u "${path}")" ;;
+        esac
+        if ! touch "${path}"; then
+            echo >&2 "ERROR: Cannot acknowledge test sharding: ${path}"
+            return 1
+        fi
+    fi
+}
+
 ################################################################################
 function _bashtest_handler() {
     FUNC_NAME="${1}"
     TEST_NAME="${2}"
-    if [[ -n "${_BASHTEST_FILTER_GLOB}${_BASHTEST_FILTER_REGX}" ]]; then
-        PASS_GLOB=
-        PASS_REGX=
-        # shellcheck disable=SC2053 # We want glob matching here.
-        if [[ -n "${_BASHTEST_FILTER_GLOB}" ]] && [[ ${TEST_NAME} == ${_BASHTEST_FILTER_GLOB} ]]; then
-            PASS_GLOB=1
-        elif [[ -n "${_BASHTEST_FILTER_REGX}" ]] && [[ ${TEST_NAME} =~ ${_BASHTEST_FILTER_REGX} ]]; then
-            PASS_REGX=1
-        fi
-        if [[ -z "${PASS_GLOB}${PASS_REGX}" ]]; then
-            echo "[  SKIP  ] ${TEST_NAME}"
-            ((_BASHTEST_NUM_SKIP+=1))
-            _bashtest_xml_case skipped "${TEST_NAME}" "Excluded by test filter or failed initialization."
-            return
-        fi
+    if ! _bashtest_selected "${TEST_NAME}"; then
+        _bashtest_skip_case "${TEST_NAME}" "Excluded by test filter."
+        return
+    elif [[ "${_BASHTEST_INIT_FAILED}" == 1 ]]; then
+        _bashtest_skip_case "${TEST_NAME}" "Test initialization failed."
+        return
+    elif [[ "${_BASHTEST_STOP}" == 1 ]]; then
+        _bashtest_skip_case "${TEST_NAME}" "Not run after an earlier failure (fail-fast)."
+        return
     fi
     echo "[  TEST  ] ${TEST_NAME}"
     _bashtest_reset_error
@@ -640,6 +700,12 @@ function test_runner() {
             return 1
         fi
     fi
+    if ! _bashtest_selection_init; then
+        _bashtest_xml_case error test_runner "Invalid test selection or sharding configuration."
+        _BASHTEST_XML_RUNNING=0
+        _bashtest_xml_write || return 1
+        return 1
+    fi
     if [[ -n "${_BASHTEST_FILTER_GLOB}" ]]; then
         echo "Test filter glob: '${_BASHTEST_FILTER_GLOB}'."
     fi
@@ -648,27 +714,49 @@ function test_runner() {
     fi
     echo "----------"
     TEST_FUNCS=()
-    while IFS='' read -r line; do TEST_FUNCS+=("${line}"); done < <(declare -F|LC_ALL=C sed -rne 's,^declare -f test::(.*)$,\1,p')
-    if _bashtest_contains_element "test_init" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
+    while IFS='' read -r line; do TEST_FUNCS+=("${line}"); done < <(declare -F|LC_ALL=C sed -rne 's,^declare -f test::(.*)$,\1,p'|LC_ALL=C sort)
+    local ordinal=0 selected=0 assigned=0
+    local owned=()
+    for TEST in ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; do
+        [[ "${TEST}" != test_init && "${TEST}" != test_done ]] || continue
+        if _bashtest_selected "${TEST}"; then
+            ((selected+=1))
+        fi
+        if (( ordinal % _BASHTEST_TOTAL_SHARDS == _BASHTEST_SHARD_INDEX )); then
+            owned+=("${TEST}")
+            if _bashtest_selected "${TEST}"; then
+                ((assigned+=1))
+            fi
+        fi
+        ((ordinal+=1))
+    done
+    # Empty shards pass only when some case matched globally. Filters selecting
+    # nothing and a suite containing no cases retain the existing error status.
+    local empty_shard=0
+    if (( selected > 0 && assigned == 0 )); then
+        empty_shard=1
+    fi
+    _BASHTEST_STOP=0
+    if [[ "${empty_shard}" == 0 ]] && _bashtest_contains_element "test_init" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
         _bashtest_reset_error
         _bashtest_invoke test::test_init
         if [[ "${_BASHTEST_RESULT}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]]; then
             _bashtest_xml_case error test_init "Test initialization failed."
             _BASHTEST_INIT_FAILED=1
-            _BASHTEST_FILTER_GLOB=("${TEST_FUNCS[*]}")
             echo "Test init (test::test_init) failed! Skipping all tests."
         else
             _bashtest_xml_case ignored test_init
         fi
         echo "----------"
     fi
-    for TEST in ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; do
-        if [[ "${TEST}" != "test_init" ]] && [[ "${TEST}" != "test_done" ]]; then
-            _bashtest_handler "test::${TEST}" "${TEST}"
-            echo "----------"
+    for TEST in ${owned[@]+"${owned[@]}"}; do
+        _bashtest_handler "test::${TEST}" "${TEST}"
+        if [[ "${TESTBRIDGE_TEST_RUNNER_FAIL_FAST:-}" == 1 && "${_BASHTEST_NUM_FAIL}" != 0 ]]; then
+            _BASHTEST_STOP=1
         fi
+        echo "----------"
     done
-    if _bashtest_contains_element "test_done" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
+    if [[ "${empty_shard}" == 0 ]] && _bashtest_contains_element "test_done" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
         _bashtest_reset_error
         _bashtest_invoke test::test_done
         if [[ "${_BASHTEST_RESULT}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]]; then
@@ -679,7 +767,7 @@ function test_runner() {
         fi
         echo "----------"
     fi
-    if [[ "${_BASHTEST_NUM_PASS}" == 0 && "${_BASHTEST_NUM_FAIL}" == 0 && "${_BASHTEST_INIT_FAILED}" == 0 ]]; then
+    if [[ "${empty_shard}" == 0 && "${_BASHTEST_NUM_PASS}" == 0 && "${_BASHTEST_NUM_FAIL}" == 0 && "${_BASHTEST_INIT_FAILED}" == 0 ]]; then
         _bashtest_xml_case error test_runner "No tests were run."
     fi
     if ! _bashtest_xml_write; then
@@ -704,7 +792,7 @@ function test_runner() {
             echo "  > bazel run ${TEST_TARGET:-<test_target>} -- -u=\"\${PWD}\""
         fi
         return 1
-    elif [[ "${_BASHTEST_NUM_PASS}" == 0 ]]; then
+    elif [[ "${empty_shard}" == 0 && "${_BASHTEST_NUM_PASS}" == 0 ]]; then
         echo >&2 "ERROR: No tests were run."
         return 2
     fi

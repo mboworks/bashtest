@@ -72,6 +72,48 @@ an explicit runner error before tests execute. The runner temporarily owns the
 caller's settings afterward; do not replace that trap inside a strict test.
 Default mode preserves existing conditional runner calls and caller error options.
 
+## Filtering, sharding, and fail-fast
+
+Bazel's native filter selects bare case names without the `test::` prefix:
+
+```sh
+bazel test //path:my_test --test_filter='^(reads|writes)_'
+```
+
+Bazel supplies this as `TESTBRIDGE_TEST_ONLY`. Bashtest interprets it as a Bash
+extended regular expression, with substring matching unless anchored. An explicit
+runner filter (`--test_arg=--test_filter=...`, `-f`, or `--gtest_filter`) replaces
+that environment default, including an explicitly empty filter. If both explicit
+regex and glob filters are provided, their union is selected, preserving the
+existing behavior. Invalid regular expressions fail before lifecycle hooks run.
+A filter selecting no cases retains exit status 2.
+
+`--gtest_filter` is a legacy name for one **Bash glob**. It does not implement
+GoogleTest's colon-separated lists or negative-filter grammar, and `GTEST_FILTER`
+is not read. Use a regex such as `^(alpha|beta)$` for multiple names.
+
+The macro's `shard_count` attribute and Bazel's `--test_sharding_strategy` work
+with `test_runner`, including a plain `sh_test` sourcing the framework. Cases are
+sorted by name in the C locale, excluding lifecycle hooks, then assigned round
+robin using `TEST_TOTAL_SHARDS` and zero-based `TEST_SHARD_INDEX`. Filtering is
+applied within that stable assignment; each case appears in only its owner's
+console/XML report. Each shard acknowledges `TEST_SHARD_STATUS_FILE`.
+
+A shard with no selected cases passes if at least one case matched across the
+whole suite; its hooks do not run. A completely empty shard writes a valid report
+with zero cases. A shard owning only filtered-out cases reports those as skipped.
+Nonempty shards run their own setup and teardown. Tests that depend on another
+case's shell state must stay in one shard. Shard variables must be supplied
+together as canonical decimal integers of at most nine digits, with a positive
+count and an index below the count. Invalid settings or a failed shard-status
+write fail before hooks execute.
+
+`bazel test --test_runner_fail_fast` sets `TESTBRIDGE_TEST_RUNNER_FAIL_FAST=1`.
+After the first failed case, bashtest marks remaining selected cases in that
+shard as skipped and still runs `test_done`. Runtime skips alone do not trigger
+fail-fast, unless `--no-skip` turns them into failures. Other shards and targets
+are independent; Bazel's `--notest_keep_going` controls stopping between targets.
+
 ## Executable tools
 
 Use `tools` to build helper executables for the test execution platform and export
@@ -149,3 +191,8 @@ no custom report exists. Reporting begins when `test_runner` is called.
 Nested runner/verifier scripts should select their own output file, or disable
 reporting with `GTEST_OUTPUT=`, so an expected failure does not become the parent
 target's report.
+Verifier fixtures should also choose their own selection environment: clear
+`TESTBRIDGE_TEST_ONLY`, set `TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0`, and use
+`TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE=` for an unsharded
+child. This prevents the parent's filter, shard assignment, or acknowledgement
+file from changing the fixture being verified.

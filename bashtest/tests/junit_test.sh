@@ -7,6 +7,13 @@ set -euo pipefail
 # shellcheck disable=SC1090,SC1091,SC2154
 source "${mboworks_bashtest}"
 
+# Verifier fixtures select their own cases, independently of the outer test's
+# filter/shard/fail-fast settings. Additional env arguments can override these.
+_junit_probe() {
+    env TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE= \
+        TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0 TESTBRIDGE_TEST_ONLY= "${@}"
+}
+
 # shellcheck disable=SC2317 # Functions are discovered by test_runner.
 test::junit_cases_and_failures() {
     local root output status=0 report
@@ -24,7 +31,7 @@ test::c_skip() { skip_test 'missing "dependency"'; }
 test::test_done() { expect_eq changed "${state}"; }
 test_runner
 PROBE
-    output="$(env GTEST_OUTPUT="xml:${report}" "${BASH}" "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
+    output="$(_junit_probe GTEST_OUTPUT="xml:${report}" "${BASH}" "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
     expect_eq 1 "${status}"
     expect_output_contains 'Some tests failed.' "${output}"
     output="$(cat "${report}")"
@@ -47,7 +54,7 @@ source "${mboworks_bashtest}"
 test::abort() { echo 'before abort' >&2; exit 7; }
 test_runner
 PROBE
-    output="$(env GTEST_OUTPUT= XML_OUTPUT_FILE="${report}" "${BASH}" "${root}/probe.sh" \
+    output="$(_junit_probe GTEST_OUTPUT= XML_OUTPUT_FILE="${report}" "${BASH}" "${root}/probe.sh" \
         --gtest_output="xml:${report}" --keep-tmpdir=never 2>&1)" || status="${?}"
     expect_eq 7 "${status}"
     expect_output_contains 'before abort' "${output}"
@@ -86,7 +93,7 @@ PROBE
         status=0
         expected=1
         [[ "${probe}" != valid_negative ]] || expected=0
-        output="$(env PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
+        output="$(_junit_probe PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
             "${root}/probe.sh" --keep-tmpdir=never 2>&1)" || status="${?}"
         expect_eq "${expected}" "${status}"
         case "${probe}" in
@@ -132,7 +139,7 @@ PROBE
         status=0
         expected=1
         [[ "${probe}" != handled ]] || expected=0
-        output="$(env PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
+        output="$(_junit_probe PROBE="${probe}" GTEST_OUTPUT="xml:${report}" "${BASH}" \
             "${root}/probe.sh" --strict-commands --keep-tmpdir=never 2>&1)" || status="${?}"
         expect_eq "${expected}" "${status}"
         expect_output_contains '[  PASS  ] b_state' "${output}"
@@ -144,13 +151,71 @@ PROBE
     done
     sed 's/^test_runner$/if test_runner; then exit 9; else exit 1; fi/' "${root}/probe.sh" > "${root}/conditional.sh"
     status=0
-    output="$(env PROBE=handled GTEST_OUTPUT="xml:${report}" "${BASH}" \
+    output="$(_junit_probe PROBE=handled GTEST_OUTPUT="xml:${report}" "${BASH}" \
         "${root}/conditional.sh" --strict-commands --keep-tmpdir=never 2>&1)" || status="${?}"
     expect_eq 1 "${status}"
     expect_output_contains 'requires a standalone test_runner' "${output}"
     output="$(cat "${report}")"
     expect_output_contains 'name="test_runner"' "${output}"
     expect_output_contains 'errors="1"' "${output}"
+}
+
+# shellcheck disable=SC2317 # Functions are discovered by test_runner.
+test::bazel_selection() {
+    local root report output status index name
+    root="$(test_tmpdir selection)"
+    report="${root}/result.xml"
+    cat > "${root}/probe.sh" <<'PROBE'
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+test::test_init() { echo INIT; }
+test::alpha() { echo CASE:alpha; if [[ "${FAIL_CASE:-}" == alpha ]]; then expect_eq yes no; fi; }
+test::beta() { echo CASE:beta; }
+test::gamma() { echo CASE:gamma; }
+test::test_done() { echo DONE; }
+test_runner
+PROBE
+    local command=(_junit_probe "GTEST_OUTPUT=xml:${report}")
+    output="$("${command[@]}" TESTBRIDGE_TEST_ONLY='^alpha$' "${BASH}" "${root}/probe.sh")"
+    expect_output_contains 'CASE:alpha' "${output}"
+    expect_output_not_contains 'CASE:beta' "${output}"
+    output="$("${command[@]}" TESTBRIDGE_TEST_ONLY='^alpha$' "${BASH}" "${root}/probe.sh" --gtest_filter='bet*')"
+    expect_output_contains 'CASE:beta' "${output}"
+    expect_output_not_contains 'CASE:alpha' "${output}"
+    for index in 0 1 2 3 4; do
+        output="$("${command[@]}" TEST_TOTAL_SHARDS=5 TEST_SHARD_INDEX="${index}" \
+            TEST_SHARD_STATUS_FILE="${root}/status-${index}" "${BASH}" "${root}/probe.sh")"
+        expect_success test -f "${root}/status-${index}"
+        case "${index}" in
+            0) name=alpha ;;
+            1) name=beta ;;
+            2) name=gamma ;;
+            *) name= ;;
+        esac
+        if [[ -n "${name}" ]]; then
+            expect_eq "CASE:${name}" "$(printf '%s\n' "${output}" | grep '^CASE:')"
+        else
+            expect_output_not_contains 'CASE:' "${output}"
+            expect_output_not_contains INIT "${output}"
+            expect_output_not_contains DONE "${output}"
+            expect_output_contains 'tests="0" failures="0" errors="0"' "$(cat "${report}")"
+        fi
+    done
+    status=0
+    output="$("${command[@]}" FAIL_CASE=alpha TESTBRIDGE_TEST_RUNNER_FAIL_FAST=1 \
+        "${BASH}" "${root}/probe.sh" 2>&1)" || status="${?}"
+    expect_eq 1 "${status}"
+    expect_output_contains DONE "${output}"
+    expect_output_not_contains 'CASE:beta' "${output}"
+    expect_output_not_contains 'CASE:gamma' "${output}"
+    expect_output_contains 'tests="3" failures="1" errors="0" skipped="2"' "$(cat "${report}")"
+    status=0
+    output="$("${command[@]}" TEST_TOTAL_SHARDS=2 TEST_SHARD_INDEX=2 \
+        "${BASH}" "${root}/probe.sh" 2>&1)" || status="${?}"
+    expect_eq 1 "${status}"
+    expect_output_contains 'Invalid test shard configuration' "${output}"
+    expect_output_not_contains INIT "${output}"
 }
 
 test_runner
