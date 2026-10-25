@@ -153,4 +153,65 @@ PROBE
     expect_output_contains 'errors="1"' "${output}"
 }
 
+# shellcheck disable=SC2317 # Functions are discovered by test_runner.
+test::bazel_selection() {
+    local root report output status index name
+    root="$(test_tmpdir selection)"
+    report="${root}/result.xml"
+    cat > "${root}/probe.sh" <<'PROBE'
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+test::test_init() { echo INIT; }
+test::alpha() { echo CASE:alpha; if [[ "${FAIL_CASE:-}" == alpha ]]; then expect_eq yes no; fi; }
+test::beta() { echo CASE:beta; }
+test::gamma() { echo CASE:gamma; }
+test::test_done() { echo DONE; }
+test_runner
+PROBE
+    # Nested fixtures own their selection environment and never acknowledge the
+    # parent target's shard status file.
+    local command=(env TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE=
+    TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0 TESTBRIDGE_TEST_ONLY= "GTEST_OUTPUT=xml:${report}")
+    output="$("${command[@]}" TESTBRIDGE_TEST_ONLY='^alpha$' "${BASH}" "${root}/probe.sh")"
+    expect_output_contains 'CASE:alpha' "${output}"
+    expect_output_not_contains 'CASE:beta' "${output}"
+    output="$("${command[@]}" TESTBRIDGE_TEST_ONLY='^alpha$' "${BASH}" "${root}/probe.sh" --gtest_filter='bet*')"
+    expect_output_contains 'CASE:beta' "${output}"
+    expect_output_not_contains 'CASE:alpha' "${output}"
+    for index in 0 1 2 3 4; do
+        output="$("${command[@]}" TEST_TOTAL_SHARDS=5 TEST_SHARD_INDEX="${index}" \
+            TEST_SHARD_STATUS_FILE="${root}/status-${index}" "${BASH}" "${root}/probe.sh")"
+        expect_success test -f "${root}/status-${index}"
+        case "${index}" in
+            0) name=alpha ;;
+            1) name=beta ;;
+            2) name=gamma ;;
+            *) name= ;;
+        esac
+        if [[ -n "${name}" ]]; then
+            expect_eq "CASE:${name}" "$(printf '%s\n' "${output}" | grep '^CASE:')"
+        else
+            expect_output_not_contains 'CASE:' "${output}"
+            expect_output_not_contains INIT "${output}"
+            expect_output_not_contains DONE "${output}"
+            expect_output_contains 'tests="0" failures="0" errors="0"' "$(cat "${report}")"
+        fi
+    done
+    status=0
+    output="$("${command[@]}" FAIL_CASE=alpha TESTBRIDGE_TEST_RUNNER_FAIL_FAST=1 \
+        "${BASH}" "${root}/probe.sh" 2>&1)" || status="${?}"
+    expect_eq 1 "${status}"
+    expect_output_contains DONE "${output}"
+    expect_output_not_contains 'CASE:beta' "${output}"
+    expect_output_not_contains 'CASE:gamma' "${output}"
+    expect_output_contains 'tests="3" failures="1" errors="0" skipped="2"' "$(cat "${report}")"
+    status=0
+    output="$("${command[@]}" TEST_TOTAL_SHARDS=2 TEST_SHARD_INDEX=2 \
+        "${BASH}" "${root}/probe.sh" 2>&1)" || status="${?}"
+    expect_eq 1 "${status}"
+    expect_output_contains 'Invalid test shard configuration' "${output}"
+    expect_output_not_contains INIT "${output}"
+}
+
 test_runner

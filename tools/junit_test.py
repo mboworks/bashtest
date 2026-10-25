@@ -24,7 +24,9 @@ class JunitTest(unittest.TestCase):
         script = self.root / 'probe.sh'
         script.write_text('set -euo pipefail\nsource "$LIBRARY"\n' + body + '\n' + runner + '\n')
         env = {key: value for key, value in os.environ.items()
-               if key not in ('GTEST_OUTPUT', 'XML_OUTPUT_FILE', 'TEST_TARGET')}
+               if key not in ('GTEST_OUTPUT', 'XML_OUTPUT_FILE', 'TEST_TARGET',
+                               'TESTBRIDGE_TEST_ONLY', 'TESTBRIDGE_TEST_RUNNER_FAIL_FAST',
+                               'TEST_TOTAL_SHARDS', 'TEST_SHARD_INDEX', 'TEST_SHARD_STATUS_FILE')}
         env.update(LIBRARY=str(ROOT / 'bashtest/bashtest.sh'), TEST_TMPDIR=str(self.root))
         if output:
             env['XML_OUTPUT_FILE'] = str(self.xml)
@@ -191,6 +193,104 @@ test::commands() { expect_exit_code 3 helper; expect_eq changed "$state"; expect
             result = self.run_probe(f'test::bad() {{ {command}; return 0; }}')
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIsNotNone(self.report()['bad'].find('failure'))
+
+    def test_native_bazel_filter_and_explicit_override(self):
+        body = 'test::alpha() { echo alpha_body; }\ntest::beta() { echo beta_body; }'
+        for args, expected in (((), 'alpha'), (('--test_filter=^beta$',), 'beta'),
+                               (('--gtest_filter=bet*',), 'beta')):
+            result = self.run_probe(body, *args, TESTBRIDGE_TEST_ONLY='^alpha$')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            cases = self.report()
+            self.assertIsNone(cases[expected].find('skipped'))
+            self.assertIsNotNone(cases['beta' if expected == 'alpha' else 'alpha'].find('skipped'))
+        result = self.run_probe(body, '--test_filter=', TESTBRIDGE_TEST_ONLY='absent')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(case.find('skipped') is None for case in self.report().values()))
+        # Preserve the existing union when both explicit filter types are given.
+        result = self.run_probe(body, '--test_filter=^alpha$', '--gtest_filter=bet*')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(case.find('skipped') is None for case in self.report().values()))
+
+    def test_invalid_filter_rejected_before_hooks(self):
+        result = self.run_probe('test::test_init() { echo must_not_run; }\n'
+                                'test::body() { :; }', TESTBRIDGE_TEST_ONLY='[')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(b'Invalid test filter', result.stderr)
+        self.assertNotIn(b'must_not_run', result.stdout)
+        self.assertIsNotNone(self.report()['test_runner'].find('error'))
+
+    def test_shards_partition_cases_and_allow_empty_shards(self):
+        body = ("test::test_init() { echo init_hook; }\n"
+                "test::test_done() { echo done_hook; }\n"
+                "test::alpha() { :; }\ntest::beta() { :; }\ntest::gamma() { :; }")
+        names = []
+        for index in range(5):
+            with self.subTest(index=index):
+                status = self.root / f'shard-{index}'
+                result = self.run_probe(body, TEST_TOTAL_SHARDS='5', TEST_SHARD_INDEX=str(index),
+                                        TEST_SHARD_STATUS_FILE=str(status))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(status.exists())
+                cases = self.report()
+                expected = ('alpha', 'beta', 'gamma')[index:index + 1]
+                self.assertEqual(list(cases), list(expected))
+                names.extend(cases)
+                self.assertEqual(b'init_hook' in result.stdout, bool(expected))
+                self.assertEqual(b'done_hook' in result.stdout, bool(expected))
+        self.assertEqual(names, ['alpha', 'beta', 'gamma'])
+        # Partition the full sorted list consistently, then filter within shards.
+        result = self.run_probe(body, TEST_TOTAL_SHARDS='2', TEST_SHARD_INDEX='1',
+                                TESTBRIDGE_TEST_ONLY='^alpha$')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(self.report()), ['beta'])
+        self.assertIsNotNone(self.report()['beta'].find('skipped'))
+        result = self.run_probe(body, TEST_TOTAL_SHARDS='2', TEST_SHARD_INDEX='1',
+                                TESTBRIDGE_TEST_ONLY='absent')
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIsNotNone(self.report()['test_runner'].find('error'))
+
+    def test_invalid_sharding_and_handshake_failures(self):
+        for environment in ({'TEST_TOTAL_SHARDS': '0', 'TEST_SHARD_INDEX': '0'},
+                            {'TEST_TOTAL_SHARDS': '2', 'TEST_SHARD_INDEX': '-1'},
+                            {'TEST_TOTAL_SHARDS': '2', 'TEST_SHARD_INDEX': '2'},
+                            {'TEST_TOTAL_SHARDS': 'two', 'TEST_SHARD_INDEX': '0'},
+                            {'TEST_TOTAL_SHARDS': '2'}, {'TEST_SHARD_INDEX': '0'},
+                            {'TEST_TOTAL_SHARDS': '9999999999999999999999', 'TEST_SHARD_INDEX': '0'}):
+            with self.subTest(environment=environment):
+                result = self.run_probe('test::body() { echo must_not_run; }', **environment)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(b'Invalid test shard configuration', result.stderr)
+                self.assertNotIn(b'must_not_run', result.stdout)
+                self.assertIsNotNone(self.report()['test_runner'].find('error'))
+        result = self.run_probe('test::body() { :; }', TEST_TOTAL_SHARDS='1',
+                                TEST_SHARD_INDEX='0', TEST_SHARD_STATUS_FILE=str(self.root / 'missing/status'))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(b'Cannot acknowledge test sharding', result.stderr)
+
+    def test_fail_fast_reports_remaining_cases_and_still_runs_teardown(self):
+        body = ("test::alpha() { expect_eq yes no; return 0; }\n"
+                "test::beta() { echo beta_body; }\ntest::gamma() { :; }\n"
+                "test::test_done() { echo done_hook; }")
+        for flag in ('1', '0', ''):
+            result = self.run_probe(body, TESTBRIDGE_TEST_RUNNER_FAIL_FAST=flag)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            cases = self.report()
+            self.assertIsNotNone(cases['alpha'].find('failure'))
+            self.assertIn(b'done_hook', result.stdout)
+            if flag == '1':
+                self.assertNotIn(b'beta_body', result.stdout)
+                self.assertIn('fail-fast', cases['beta'].find('skipped').attrib['message'])
+                self.assertIsNotNone(cases['gamma'].find('skipped'))
+            else:
+                self.assertIn(b'beta_body', result.stdout)
+                self.assertIsNone(cases['beta'].find('skipped'))
+        result = self.run_probe(body, TESTBRIDGE_TEST_RUNNER_FAIL_FAST='1', TESTBRIDGE_TEST_ONLY='beta')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(self.report()['beta'].find('skipped'))
+        result = self.run_probe('test::alpha() { skip_test absent; }\ntest::beta() { :; }',
+                                '--no-skip', TESTBRIDGE_TEST_RUNNER_FAIL_FAST='1')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIsNotNone(self.report()['beta'].find('skipped'))
 
     def test_skip_is_failure_under_no_skip(self):
         result = self.run_probe('test::skip() { skip_test "not available"; }', '--no-skip')

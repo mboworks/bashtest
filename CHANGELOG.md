@@ -1,5 +1,9 @@
 # 0.7.1
 
+* Honor native Bazel test filters, sharding, and runner fail-fast. Validate filters
+  and shard settings before hooks run, acknowledge shard support, keep reports
+  local to each shard, and allow empty shards without masking an empty selection.
+
 * Preserve assertion failures across command substitutions, subshells, and waited
   background jobs. Add `expect_success`, `expect_exit_code`, and opt-in
   `--strict-commands` checking for unhandled command failures without discarding

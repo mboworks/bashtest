@@ -141,3 +141,76 @@ for target in "${junit_targets[@]}"; do
     grep -F 'actual &amp; value' "${report}" >/dev/null
     echo "[EXPECTED FAILURE: JUnit fixture] ${target}: Bazel collected per-function failure XML"
 done
+
+# Exercise native Bazel flags through the macro and plain sh_test. These manual
+# fixtures are invoked explicitly because their unfiltered beta case must fail.
+cat >> BUILD.bazel <<'EOF'
+bashtest(
+    name = "selection_test",
+    srcs = ["selection.sh"],
+    tags = ["manual"],
+)
+EOF
+cat > selection.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck disable=SC1090,SC1091,SC2154
+source "${mboworks_bashtest}"
+# shellcheck disable=SC2317
+test::alpha() { echo CASE:alpha; if [[ "${FAIL_CASE:-}" == alpha ]]; then expect_eq yes no; fi; }
+# shellcheck disable=SC2317
+test::beta() { echo CASE:beta; expect_eq filtered_case must_not_run; }
+# shellcheck disable=SC2317
+test::gamma() { echo CASE:gamma; }
+# shellcheck disable=SC2317
+test::test_done() { echo DONE; }
+test_runner
+EOF
+chmod +x selection.sh
+selection_targets=(//:selection_test)
+case "${OSTYPE}" in
+    msys*|cygwin*) ;;
+    *)
+        cat >> BUILD.bazel <<'EOF'
+sh_test(
+    name = "selection_sh_test",
+    srcs = ["selection.sh"],
+    data = ["@framework//bashtest:bashtest_sh"],
+    env = {"mboworks_bashtest": "$(rootpath @framework//bashtest:bashtest_sh)"},
+    tags = ["manual"],
+)
+EOF
+        selection_targets+=(//:selection_sh_test)
+        ;;
+esac
+bazel test --enable_runfiles=no --test_filter='^(alpha|gamma)$' "${selection_targets[@]}"
+bazel test --enable_runfiles=no --test_filter='^(alpha|gamma)$' \
+    --test_sharding_strategy=forced=5 "${selection_targets[@]}"
+for target in "${selection_targets[@]}"; do
+    reports=("${junit_logs}/${target#//:}"/shard_*/test.xml)
+    [[ "${#reports[@]}" == 5 ]]
+    alpha=0 gamma=0 empty=0
+    for report in "${reports[@]}"; do
+        if grep -F 'name="alpha"' "${report}" >/dev/null; then ((alpha+=1)); fi
+        if grep -F 'name="gamma"' "${report}" >/dev/null; then ((gamma+=1)); fi
+        if grep -F 'tests="0" failures="0" errors="0"' "${report}" >/dev/null; then ((empty+=1)); fi
+    done
+    [[ "${alpha}" == 1 && "${gamma}" == 1 && "${empty}" == 2 ]]
+    echo "[SHARDING VERIFIED] ${target}: five reports, each selected case once, two empty reports"
+done
+if bazel test --enable_runfiles=no --test_runner_fail_fast --test_env=FAIL_CASE=alpha \
+    "${selection_targets[@]}" > selection_failure.log 2>&1; then
+    echo >&2 'ERROR: intentionally failing fail-fast fixtures passed'
+    exit 1
+fi
+for target in "${selection_targets[@]}"; do
+    report="${junit_logs}/${target#//:}/test.xml"
+    grep -F 'tests="3" failures="1" errors="0" skipped="2"' "${report}" >/dev/null
+    grep -F 'fail-fast' "${report}" >/dev/null
+    grep -F 'DONE' "${junit_logs}/${target#//:}/test.log" >/dev/null
+    if grep -F 'CASE:beta' "${junit_logs}/${target#//:}/test.log"; then
+        echo >&2 'ERROR: fail-fast executed a later case'
+        exit 1
+    fi
+    echo "[EXPECTED FAILURE: fail-fast fixture] ${target}: later cases skipped and teardown ran"
+done
