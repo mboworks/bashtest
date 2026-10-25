@@ -1,6 +1,6 @@
 # Verify that tests bootstrap their own Bash and Unix utilities.
 $ErrorActionPreference = 'Stop'
-$bazel = (Get-Command bazel -CommandType Application).Source
+$bazel = (Get-Command bazel).Source
 function Invoke-TestBazel([string] $name, [string[]] $bazelArgs) {
     if (-not $env:BASHTEST_CI_REPORTS) {
         & $bazel @bazelArgs

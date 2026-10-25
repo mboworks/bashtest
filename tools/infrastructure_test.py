@@ -26,6 +26,8 @@ class InfrastructureTest(unittest.TestCase):
         self.assertIn('ci_bazel root-default success test //...', workflow)
         self.assertIn('ci_bazel root-manifest success test --enable_runfiles=no //...', workflow)
         self.assertIn('bazel run //tools:ci_reports -- summary', workflow)
+        summary = workflow.split('- name: Summarize JUnit results', 1)[1].split('- name: Retain test diagnostics', 1)[0]
+        self.assertIn('MSYS_NO_PATHCONV: "1"', summary)
         self.assertNotIn('python3 -m unittest', workflow)
         self.assertEqual(workflow.count('uses: actions/setup-python@'), 1)
         self.assertNotIn('pull_request_target', workflow)

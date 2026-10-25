@@ -91,6 +91,8 @@ jobs:
 
     - name: Summarize JUnit results
       if: always()
+      env:
+        MSYS_NO_PATHCONV: "1"
       shell: bash
       run: bazel run //tools:ci_reports -- summary "${BASHTEST_CI_REPORTS}" --output "${GITHUB_STEP_SUMMARY}"
 
