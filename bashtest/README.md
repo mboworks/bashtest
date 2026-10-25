@@ -52,3 +52,51 @@ or `env_inherit`. Names beginning with `_BASHTEST`, `TEST_`, `RUNFILES_`, or `BA
 and `mboworks_bashtest`, `PATH`, `IFS`, `SHELLOPTS`, `ENV`, `EUID`, `UID`, and
 `PPID` are reserved. Quote exported paths when invoking tools, including on
 Windows. No `$(location ...)` expansion is needed for tool paths.
+
+## JUnit XML for CI
+
+When run with `bazel test`, `test_runner` writes a JUnit-style XML report to
+Bazel's `XML_OUTPUT_FILE`. Bazel collects it as
+`bazel-testlogs/<package>/<target>/test.xml`. Each `test::name` becomes a separate
+`testcase`; reports include durations in whole seconds, assertion diagnostics,
+return-code failures, skipped cases and their reasons, and captured function
+output. XML text is escaped, and invalid UTF-8 or XML 1.0 bytes become `?`.
+
+This also works with a plain `rules_shell` `sh_test` that sources `bashtest.sh`
+and calls `test_runner`: reporting uses Bazel's standard test environment and
+requires no extra rule attribute. The bashtest macro supplies the framework and
+its managed Windows runtime as usual; a plain `sh_test` retains its own shell
+and runfiles configuration.
+
+Outside `bazel test`, enable a report with either of:
+
+```sh
+GTEST_OUTPUT=xml:results.xml ./my_test.sh
+bazel run //path:my_test -- --gtest_output=xml:results.xml
+```
+
+Selection follows GoogleTest's precedence: `--gtest_output` (or
+`--gtest-output`) overrides `GTEST_OUTPUT`, which overrides `XML_OUTPUT_FILE`.
+`xml` and `xml:` default to `test_detail.xml` in the initial working directory.
+A directory path ending in `/` selects `<script-name>.xml`, adding `_1`, `_2`,
+and so on if a report already exists. Parent directories are created. An explicit
+file path replaces that file. With `bazel run`, use an absolute output path to
+keep the location independent of Bazel's working directory. An empty
+`GTEST_OUTPUT` or `--gtest_output=` disables reporting. JSON output is unsupported;
+an unsupported format or failure to write a report makes the test fail.
+
+With reporting enabled, function output is buffered and replayed after each
+function, while functions continue to run in the same shell. Setup and teardown
+state remains visible to the tests. Failed `test_init` and `test_done` hooks appear
+as additional error cases; successful hooks do not count as test cases. Filters
+produce skipped cases, and `--no-skip` turns runtime skip requests into failures.
+The existing exit code 2 for no passing or failing cases is retained and recorded
+as a `test_runner` error. An early exit or a catchable signal during a function
+records that function as an error and retains a nonzero exit status; `exit 0`
+inside a function is also an error because it aborts the runner. SIGKILL and
+machine termination cannot be handled; Bazel supplies its fallback reporting when
+no custom report exists. Reporting begins when `test_runner` is called.
+
+Nested runner/verifier scripts should select their own output file, or disable
+reporting with `GTEST_OUTPUT=`, so an expected failure does not become the parent
+target's report.

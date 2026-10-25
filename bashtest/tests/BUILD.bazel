@@ -14,6 +14,7 @@
 # limitations under the License.
 
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bashtest:bashtest.bzl", "bashtest")
 load(":tool_fixture.bzl", "configuration_data", "tool_source")
 
@@ -109,4 +110,22 @@ bashtest(
         "@platforms//os:windows",
         "@platforms//cpu:x86_64",
     ],
+)
+
+bashtest(
+    name = "junit_test",
+    srcs = ["junit_test.sh"],
+)
+
+# A plain sh_test needs no special reporting attribute: Bazel supplies XML_OUTPUT_FILE.
+# The bashtest macro above also exercises the managed Windows launcher.
+sh_test(
+    name = "junit_sh_test",
+    srcs = ["junit_test.sh"],
+    data = ["//bashtest:bashtest_sh"],
+    env = {"mboworks_bashtest": "$(rootpath //bashtest:bashtest_sh)"},
+    target_compatible_with = select({
+        "//bashtest:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
