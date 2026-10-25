@@ -28,8 +28,8 @@ may briefly lag post-job cache uploads; verify later runs before claiming saving
 ### Test diagnostics
 
 Every test-matrix job retains a `test-results-OS` Actions artifact for seven days,
-including on failure. `tools/ci_reports.py run` saves each Bazel command's console
-log and build events, then copies the `test.log` and `test.xml` files named by that
+including on failure. CI runs Bazel tests directly, saving each command's console
+log and build events. The Bazel-built `//tools:ci_reports` collector then copies the `test.log` and `test.xml` files named by that
 invocation's test-result events. Root runfiles modes, external consumers, shards,
 and retry attempts remain separate. Results are copied before another command can
 overwrite them and before consumer cleanup removes its temporary workspace. Stale
@@ -50,16 +50,22 @@ Summary names and excerpts are HTML-escaped, diagnostics are placed in literal
 XML files above 8 MiB remain in the artifact but are not parsed for the summary;
 DTD/entity declarations are rejected. Complete reports and logs are retained.
 Summary generation uses Python's standard library and `GITHUB_STEP_SUMMARY`, with
-no PR comments, check-writing token, or privileged follow-up workflow. Python is
-a CI reporting dependency, including an absolute interpreter path when Windows
-validation strips PATH; it is not a requirement for running bashtest.
+no PR comments, check-writing token, or privileged follow-up workflow. Python tests
+are `py_test` targets under `//tools/...` and run with `bazel test //...`; the
+collector and documentation verifier are `py_binary` targets. `rules_python` and
+its Python 3.13 toolchain are dev dependencies, so consumers acquire no Python
+runtime requirement. No separate Python installation or unittest CI job is needed.
+Tests that exercise Unix process/signal or Git/shell release behavior run on Linux
+and macOS. Portable Python suites also run in the stripped-PATH Windows job.
 
 To reproduce capture locally, use a fresh output directory for each invocation:
 
 ```sh
-python3 tools/ci_reports.py run --output /tmp/bashtest-reports/root -- bazel test //...
-BASHTEST_CI_REPORTS=/tmp/bashtest-reports bash bashtest/tests/external_consumer_test.sh
-python3 tools/ci_reports.py summary /tmp/bashtest-reports --output /tmp/bashtest-summary.md
+source bashtest/tests/ci_support.sh
+export BASHTEST_CI_REPORTS=/tmp/bashtest-reports
+ci_bazel root success test //...
+bash bashtest/tests/external_consumer_test.sh
+bazel run //tools:ci_reports -- summary /tmp/bashtest-reports --output /tmp/bashtest-summary.md
 ```
 
 Without `BASHTEST_CI_REPORTS`, the standalone consumer scripts run Bazel directly.
@@ -100,8 +106,7 @@ The change follows [mbo PR #549](https://github.com/mboworks/mbo/pull/549).
 retains this repository's layout and API promises. Beautysh remains the shell formatter; no C++
 style guide or competing shell formatter is introduced.
 
-Run `bazel test //...`, `python3 -m unittest discover -s tools -p '*_test.py'`, and
-`pre-commit run --all-files`. CI also builds the configured release documentation to validate
+Run `bazel test //...` and `pre-commit run --all-files`. CI also builds the configured release documentation to validate
 links and mappings before publication.
 
 ## Version consistency

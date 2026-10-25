@@ -1,13 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) M. Boerger, the MBO Works authors
 # SPDX-License-Identifier: Apache-2.0
-"""Run CI Bazel commands, retain their exact results, and summarize local JUnit XML."""
+"""Retain exact Bazel invocation results and summarize local JUnit XML."""
 
 import argparse
 import html
 import json
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
@@ -51,34 +50,15 @@ def collect(events, destination):
     return results, errors
 
 
-def run(output, expected, command):
-    output.mkdir(parents=True, exist_ok=False)
-    events = output.resolve() / 'events.json'
-    executable = shutil.which(command[0]) or command[0]
-    command = [executable, command[1], f'--build_event_json_file={events}', *command[2:]]
-    status = 1
-    errors = []
-    try:
-        with (output / 'command.log').open('wb') as log:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            with process.stdout:
-                while chunk := process.stdout.read1(65536):
-                    log.write(chunk)
-                    log.flush()
-                    sys.stdout.buffer.write(chunk)
-                    sys.stdout.buffer.flush()
-            status = process.wait()
-    except OSError as error:
-        errors.append(str(error))
-    results, collection_errors = collect(events, output)
-    errors.extend(collection_errors)
+def retain(events, output, expected, status):
+    output.mkdir(parents=True, exist_ok=True)
+    results, errors = collect(events, output)
     (output / 'invocation.json').write_text(json.dumps({
-        'command': command, 'exit_code': status, 'expected': expected,
-        'results': results, 'errors': errors,
+        'exit_code': status, 'expected': expected, 'results': results, 'errors': errors,
     }, indent=2) + '\n', encoding='utf-8')
     for error in errors:
         print(f'CI result collection: {error}', file=sys.stderr)
-    return status if status else int(bool(errors))
+    return int(bool(errors))
 
 
 class SummaryTreeBuilder(ET.TreeBuilder):
@@ -159,19 +139,17 @@ def summarize(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='action', required=True)
-    runner = commands.add_parser('run')
-    runner.add_argument('--output', type=Path, required=True)
-    runner.add_argument('--expect', choices=('success', 'failure'), default='success')
-    runner.add_argument('command', nargs=argparse.REMAINDER)
+    collector = commands.add_parser('collect')
+    collector.add_argument('--events', type=Path, required=True)
+    collector.add_argument('--output', type=Path, required=True)
+    collector.add_argument('--exit-code', type=int, required=True)
+    collector.add_argument('--expect', choices=('success', 'failure'), default='success')
     summary = commands.add_parser('summary')
     summary.add_argument('directory', type=Path)
     summary.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    if args.action == 'run':
-        command = args.command[1:] if args.command[:1] == ['--'] else args.command
-        if len(command) < 2 or command[1] not in ('test', 'build', 'run'):
-            parser.error('run requires a Bazel test, build, or run command after --')
-        return run(args.output, args.expect, command)
+    if args.action == 'collect':
+        return retain(args.events, args.output, args.expect, args.exit_code)
     text, failed = summarize(args.directory)
     with args.output.open('a', encoding='utf-8') as stream:
         stream.write(text)

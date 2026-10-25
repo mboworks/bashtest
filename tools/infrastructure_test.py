@@ -23,8 +23,11 @@ class InfrastructureTest(unittest.TestCase):
         self.assertIn('name: Retain test diagnostics\n      if: always()', workflow)
         self.assertIn('name: test-results-${{ matrix.os }}', workflow)
         self.assertIn('retention-days: 7', workflow)
-        self.assertIn('ci_reports.py run --output "${BASHTEST_CI_REPORTS}/root-default"', workflow)
-        self.assertIn('ci_reports.py run --output "${BASHTEST_CI_REPORTS}/root-manifest"', workflow)
+        self.assertIn('ci_bazel root-default success test //...', workflow)
+        self.assertIn('ci_bazel root-manifest success test --enable_runfiles=no //...', workflow)
+        self.assertIn('bazel run //tools:ci_reports -- summary', workflow)
+        self.assertNotIn('python3 -m unittest', workflow)
+        self.assertEqual(workflow.count('uses: actions/setup-python@'), 1)
         self.assertNotIn('pull_request_target', workflow)
         self.assertNotIn('checks: write', workflow)
 

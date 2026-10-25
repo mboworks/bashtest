@@ -30,3 +30,13 @@ windows_runtime = use_repo_rule("//bashtest/runtime:repositories.bzl", "windows_
 windows_runtime(name = "bashtest_windows_runtime")
 
 register_toolchains("//bashtest/runtime:windows_toolchain")
+
+# Repository tooling and its tests do not add a runtime dependency for consumers.
+bazel_dep(name = "rules_python", version = "2.4.5", dev_dependency = True)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
+python.defaults(python_version = "3.13")
+python.toolchain(python_version = "3.13")
+
+python_config = use_extension("@rules_python//python/extensions:config.bzl", "config", dev_dependency = True)
+python_config.explicit_init_py(default = True)

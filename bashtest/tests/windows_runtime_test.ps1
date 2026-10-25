@@ -1,20 +1,22 @@
 # Verify that tests bootstrap their own Bash and Unix utilities.
 $ErrorActionPreference = 'Stop'
-$bazel = (Get-Command bazel).Source
-# Keep an absolute Python path for CI reporting after Unix tools and Python are
-# removed from PATH. Python is a CI dependency, not a bashtest runtime dependency.
-$python = $null
-if ($env:BASHTEST_CI_REPORTS) {
-    $python = (Get-Command python).Source
-    $env:BASHTEST_CI_PYTHON = $python.Replace('\', '/')
-}
+$bazel = (Get-Command bazel -CommandType Application).Source
 function Invoke-TestBazel([string] $name, [string[]] $bazelArgs) {
-    if ($env:BASHTEST_CI_REPORTS) {
-        & $python tools/ci_reports.py run --output "$env:BASHTEST_CI_REPORTS/$name" -- $bazel @bazelArgs
-    } else {
+    if (-not $env:BASHTEST_CI_REPORTS) {
         & $bazel @bazelArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        return
     }
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $output = Join-Path $env:BASHTEST_CI_REPORTS $name
+    New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
+    $events = Join-Path $output 'events.json'
+    $command = @($bazelArgs[0], "--build_event_json_file=$events") + $bazelArgs[1..($bazelArgs.Count - 1)]
+    & $bazel @command 2>&1 | Tee-Object -FilePath (Join-Path $output 'command.log')
+    $status = $LASTEXITCODE
+    & $bazel run //tools:ci_reports -- collect --events $events --output $output --exit-code $status
+    $collectionStatus = $LASTEXITCODE
+    if ($status -ne 0) { exit $status }
+    if ($collectionStatus -ne 0) { exit $collectionStatus }
 }
 # Hosted runners install Bazelisk through npm; retain its Node launcher only.
 $nodeDirectory = Split-Path (Get-Command node).Source

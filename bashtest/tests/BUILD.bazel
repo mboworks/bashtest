@@ -129,3 +129,13 @@ sh_test(
         "//conditions:default": [],
     }),
 )
+
+filegroup(
+    name = "consumer_scripts",
+    srcs = [
+        "ci_support.sh",
+        "tool_fixture.bzl",
+        "tools_consumer_test.sh",
+    ],
+    visibility = ["//tools:__pkg__"],
+)

@@ -2,12 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Observable CI report collection, exit status, and safe rendering contracts."""
 
-import io
 import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -15,7 +13,7 @@ from unittest import mock
 import ci_reports
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).parents[1]
 
 
 class CiReportsTest(unittest.TestCase):
@@ -111,22 +109,27 @@ class CiReportsTest(unittest.TestCase):
         self.assertIn('summary size limit', text)
         self.assertEqual(report.stat().st_size, 100)
 
-    def test_runner_preserves_nonzero_exit_and_logs(self):
-        fake = self.root / 'fake_bazel.py'
-        fake.write_text("import pathlib,sys\n"
-                        "pathlib.Path(sys.argv[2].split('=',1)[1]).write_text('')\n"
-                        "print('last diagnostic', flush=True)\n"
-                        "sys.exit(7)\n")
-        output = self.root / 'status-seven'
-        original = subprocess.Popen
-        def start(command, **kwargs):
-            return original([sys.executable, str(fake), *command[1:]], **kwargs)
-        with mock.patch.object(ci_reports.subprocess, 'Popen', side_effect=start), \
-                mock.patch.object(sys, 'stdout', mock.Mock(buffer=io.BytesIO())):
-            status = ci_reports.run(output, 'failure', ['bazel', 'test', '//:fixture'])
-        self.assertEqual(status, 7)
-        self.assertIn('last diagnostic', (output / 'command.log').read_text())
-        self.assertEqual(json.loads((output / 'invocation.json').read_text())['exit_code'], 7)
+    @unittest.skipUnless(os.name == 'posix', 'Bash command wrapper')
+    def test_bazel_command_exit_and_log_survive_collection(self):
+        fake = self.root / 'bazel'
+        fake.write_text('#!/usr/bin/env bash\n'
+                        'if [[ "$1" == test ]]; then echo original_diagnostic; exit 7; fi\n'
+                        'exit 0\n')
+        fake.chmod(0o755)
+        destination = self.root / 'reports'
+        environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ['PATH'],
+                           BASHTEST_CI_REPORTS=str(destination))
+        command = f'source "{ROOT}/bashtest/tests/ci_support.sh"; ci_bazel fixture failure test //:fixture'
+        result = subprocess.run(['bash', '-c', command], env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertIn('original_diagnostic', (destination / 'fixture/command.log').read_text())
+
+    def test_retains_original_exit_and_expectation(self):
+        output = self.root / 'retained'
+        self.assertEqual(ci_reports.retain(self.events(), output, 'failure', 7), 0)
+        invocation = json.loads((output / 'invocation.json').read_text())
+        self.assertEqual(invocation['exit_code'], 7)
+        self.assertEqual(invocation['expected'], 'failure')
 
     @unittest.skipUnless(os.name == 'posix', 'POSIX executable fixture')
     def test_tools_consumer_exposes_unexpected_negative_analysis_diagnostics(self):
@@ -145,6 +148,7 @@ class CiReportsTest(unittest.TestCase):
         self.assertIn('[UNEXPECTED CONSUMER FAILURE: invalid.log]', result.stderr)
         self.assertIn('UNEXPECTED_ANALYSIS_CAUSE', result.stderr)
 
+    @unittest.skipUnless(os.name == 'posix', 'Bash consumer helper')
     def test_consumer_cleanup_prints_hidden_logs_only_on_unexpected_failure(self):
         (self.root / 'negative.log').write_text('analysis failed for unexpected reason')
         command = f'source "{ROOT}/bashtest/tests/ci_support.sh"; ci_failure_logs "$STATUS" "$LOGS"'

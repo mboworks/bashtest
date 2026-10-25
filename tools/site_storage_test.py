@@ -50,7 +50,7 @@ class SiteStorageTest(unittest.TestCase):
                     self.assertEqual('::warning::' in output.getvalue(), warns)
 
     def test_publisher_measures_before_commit_and_after_artwork_with_shallow_fetch(self):
-        source = (Path(__file__).resolve().parent.parent / '.github/workflows/pages.yml').read_text()
+        source = (Path(__file__).parent.parent / '.github/workflows/pages.yml').read_text()
         self.assertLess(source.index('site_storage.py site'), source.index('git -C site commit'))
         self.assertLess(source.index('site_artwork.py'), source.index('site_storage.py public'))
         self.assertLess(source.index('site_storage.py public'), source.index('uses: actions/upload-pages-artifact@'))

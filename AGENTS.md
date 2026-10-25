@@ -5,8 +5,7 @@ compatibility; [STYLE_SH.md](STYLE_SH.md) owns shell conventions;
 [GIT_RULES.md](GIT_RULES.md) owns branch and PR operations.
 [CONTRIBUTING.md](CONTRIBUTING.md) describes contributor onboarding.
 
-Run `bazel test //...`, `python3 -m unittest discover -s tools -p '*_test.py'`, and
-`pre-commit run --all-files` before proposing repository-wide changes. Add regression tests for
+Run `bazel test //...` and `pre-commit run --all-files` before proposing repository-wide changes. Add regression tests for
 behavior changes. Preserve the supported operating systems in CI and keep direct Bazel dependencies
 explicit. Keep developer-only dependencies separate from the published module where supported.
 
