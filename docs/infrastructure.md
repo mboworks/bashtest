@@ -28,8 +28,10 @@ may briefly lag post-job cache uploads; verify later runs before claiming saving
 ### Test diagnostics
 
 Every test-matrix job retains a `test-results-OS` Actions artifact for seven days,
-including on failure. CI runs Bazel tests directly, saving each command's console
-log and build events. The Bazel-built `//tools:ci_reports` collector then copies the `test.log` and `test.xml` files named by that
+including on failure. The workflow and consumer scripts execute ordinary Bazel
+commands with `--build_event_json_file`. Collection runs separately through the
+Bazel-built `//tools:ci_reports` tool, which copies the `test.log` and `test.xml`
+files named by that
 invocation's test-result events. Root runfiles modes, external consumers, shards,
 and retry attempts remain separate. Results are copied before another command can
 overwrite them and before consumer cleanup removes its temporary workspace. Stale
@@ -38,7 +40,15 @@ build events are reported as collection errors; remote-only output URIs are not
 downloaded by this local-CI collector.
 
 An always-run step writes per-invocation JUnit counts and limited failure/error
-excerpts to the job summary. It counts actual cases rather than trusting aggregate
+excerpts to the job summary. It first collects pending root results, including
+commands that failed before an explicit collection call. Consumer cleanup does the
+same before deleting its workspace and retains negative-analysis command logs.
+Build/test status comes from the build events' finished event;
+Bazel's ordinary exit status still determines the test step's outcome. For
+`bazel run`, build events describe the build, while the native CI step reports
+the program's exit status. Event files
+under an `expected/` directory identify intentional failure commands. Console
+output remains in the native Actions step logs. It counts actual cases rather than trusting aggregate
 XML attributes, labels intentionally failing fixture commands, and fails on
 unexpected command outcomes, collection errors, or malformed JUnit XML. The
 consumer scripts still verify each expected failure's precise behavior and print
@@ -61,11 +71,12 @@ and macOS. Portable Python suites also run in the stripped-PATH Windows job.
 To reproduce capture locally, use a fresh output directory for each invocation:
 
 ```sh
-source bashtest/tests/ci_support.sh
 export BASHTEST_CI_REPORTS=/tmp/bashtest-reports
-ci_bazel root success test //...
+mkdir -p "$BASHTEST_CI_REPORTS"
+bazel test //... --build_event_json_file="$BASHTEST_CI_REPORTS/root.json"
+bazel run //tools:ci_reports -- collect --events "$BASHTEST_CI_REPORTS/root.json" --output "$BASHTEST_CI_REPORTS/root"
 bash bashtest/tests/external_consumer_test.sh
-bazel run //tools:ci_reports -- summary /tmp/bashtest-reports --output /tmp/bashtest-summary.md
+bazel run //tools:ci_reports -- finalize "$BASHTEST_CI_REPORTS" --destination "$BASHTEST_CI_REPORTS" --output /tmp/bashtest-summary.md
 ```
 
 Without `BASHTEST_CI_REPORTS`, the standalone consumer scripts run Bazel directly.

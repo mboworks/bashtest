@@ -57,7 +57,9 @@ jobs:
     - uses: actions/checkout@v7
     - name: Configure report capture
       shell: bash
-      run: echo "BASHTEST_CI_REPORTS=${RUNNER_TEMP}/test-results" >> "${GITHUB_ENV}"
+      run: |
+        mkdir -p "${RUNNER_TEMP}/test-results"
+        echo "BASHTEST_CI_REPORTS=${RUNNER_TEMP}/test-results" >> "${GITHUB_ENV}"
     - uses: bazel-contrib/setup-bazel@0.19.1
       with:
         cache-save: ${{ github.ref == 'refs/heads/main' }}
@@ -72,9 +74,10 @@ jobs:
       env:
         MSYS_NO_PATHCONV: "1"
       run: |
-        source bashtest/tests/ci_support.sh
-        ci_bazel root-default success test //...
-        ci_bazel root-manifest success test --enable_runfiles=no //...
+        bazel test //... --build_event_json_file="${BASHTEST_CI_REPORTS}/root-default.json"
+        bazel run //tools:ci_reports -- collect --events "${BASHTEST_CI_REPORTS}/root-default.json" --output "${BASHTEST_CI_REPORTS}/root-default"
+        bazel test --enable_runfiles=no //... --build_event_json_file="${BASHTEST_CI_REPORTS}/root-manifest.json"
+        bazel run //tools:ci_reports -- collect --events "${BASHTEST_CI_REPORTS}/root-manifest.json" --output "${BASHTEST_CI_REPORTS}/root-manifest"
     - name: Test external module consumer
       if: runner.os != 'Windows'
       env:
@@ -94,7 +97,7 @@ jobs:
       env:
         MSYS_NO_PATHCONV: "1"
       shell: bash
-      run: bazel run //tools:ci_reports -- summary "${BASHTEST_CI_REPORTS}" --output "${GITHUB_STEP_SUMMARY}"
+      run: bazel run //tools:ci_reports -- finalize "${BASHTEST_CI_REPORTS}" --destination "${BASHTEST_CI_REPORTS}" --output "${GITHUB_STEP_SUMMARY}"
 
     - name: Retain test diagnostics
       if: always()

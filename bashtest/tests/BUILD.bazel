@@ -134,8 +134,10 @@ filegroup(
     name = "consumer_scripts",
     srcs = [
         "ci_support.sh",
+        "external_consumer_test.sh",
         "tool_fixture.bzl",
         "tools_consumer_test.sh",
+        "windows_runtime_test.ps1",
     ],
     visibility = ["//tools:__pkg__"],
 )

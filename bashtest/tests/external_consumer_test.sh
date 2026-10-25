@@ -23,9 +23,17 @@ source "${repo}/bashtest/tests/ci_support.sh"
 # The override consumes this checkout, including unreleased development versions.
 version="$(sed -nE 's/.*version = "([^"]+)".*/\1/p' "${repo}/MODULE.bazel" | head -n1)"
 root="$(mktemp -d)"
+events="${root}/events"
+mkdir -p "${events}/expected"
+case "${OSTYPE}" in
+    msys*|cygwin*) events="$(cygpath -am "${events}")" ;;
+esac
 cleanup() {
     local status="${?}"
     ci_failure_logs "${status}" "${PWD}"
+    if ! ci_collect_pending "${events}" "${PWD}" "external"; then
+        if [[ "${status}" == 0 ]]; then status=1; fi
+    fi
     # Windows cannot remove a directory while it is a process working directory.
     bazel shutdown >/dev/null 2>&1 || true
     cd "${repo}"
@@ -70,11 +78,14 @@ test_runner
 EOF
 # Also run the framework's own suite as an external dependency, as BCR does.
 # A standalone consumer test alone cannot catch root-workspace assumptions in it.
-ci_bazel external-full success test --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
+bazel test --build_event_json_file="${events}/external-full.json" --enable_runfiles=no --test_output=errors //:consumer_test @framework//bashtest/tests/...
+ci_collect "${events}/external-full.json"
 # A filtered/sharded meta-test must not leak its settings into verifier fixtures.
-ci_bazel external-meta-shards success test --enable_runfiles=no --test_filter='^junit_cases_and_failures$' \
+bazel test --build_event_json_file="${events}/external-meta-shards.json" --enable_runfiles=no --test_filter='^junit_cases_and_failures$' \
     --test_sharding_strategy=forced=5 @framework//bashtest/tests:junit_test
-ci_bazel external-run success run --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
+ci_collect "${events}/external-meta-shards.json"
+bazel run --build_event_json_file="${events}/external-run.json" --enable_runfiles=no //:consumer_test -- --keep-tmpdir=never
+ci_collect "${events}/external-run.json"
 
 # Exercise both documented update spellings with a workspace path containing spaces.
 # Separate MSYS2 installations have different /tmp mounts. Cross the native
@@ -84,10 +95,12 @@ case "${OSTYPE}" in
     msys*|cygwin*) workspace="$(cygpath -am "${workspace}")" ;;
 esac
 printf 'stale\n' > golden.txt
-ci_bazel external-update-long success run --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}" --keep-tmpdir=never
+bazel run --build_event_json_file="${events}/external-update-long.json" --enable_runfiles=no //:consumer_test -- --update-golden="${workspace}" --keep-tmpdir=never
+ci_collect "${events}/external-update-long.json"
 [[ "$(cat golden.txt)" == 'hello world' ]]
 printf 'stale again\n' > golden.txt
-ci_bazel external-update-short success run --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
+bazel run --build_event_json_file="${events}/external-update-short.json" --enable_runfiles=no //:consumer_test -- -u="${workspace}" --keep-tmpdir=never
+ci_collect "${events}/external-update-short.json"
 [[ "$(cat golden.txt)" == 'hello world' ]]
 
 # Verify that Bazel collects per-function failure XML, rather than its fallback
@@ -132,10 +145,11 @@ EOF
         junit_targets+=(//:junit_sh_failure_test)
         ;;
 esac
-if ci_bazel external-junit-failure failure test --enable_runfiles=no "${junit_targets[@]}" > junit_failure.log 2>&1; then
+if bazel test --build_event_json_file="${events}/expected/external-junit-failure.json" --enable_runfiles=no "${junit_targets[@]}" > junit_failure.log 2>&1; then
     echo >&2 'ERROR: intentionally failing JUnit fixtures passed'
     exit 1
 fi
+ci_collect "${events}/expected/external-junit-failure.json"
 junit_logs="$(bazel info bazel-testlogs)"
 case "${OSTYPE}" in
     msys*|cygwin*) junit_logs="$(cygpath -u "${junit_logs}")" ;;
@@ -191,9 +205,11 @@ EOF
         selection_targets+=(//:selection_sh_test)
         ;;
 esac
-ci_bazel external-filter success test --enable_runfiles=no --test_filter='^(alpha|gamma)$' "${selection_targets[@]}"
-ci_bazel external-shards success test --enable_runfiles=no --test_filter='^(alpha|gamma)$' \
+bazel test --build_event_json_file="${events}/external-filter.json" --enable_runfiles=no --test_filter='^(alpha|gamma)$' "${selection_targets[@]}"
+ci_collect "${events}/external-filter.json"
+bazel test --build_event_json_file="${events}/external-shards.json" --enable_runfiles=no --test_filter='^(alpha|gamma)$' \
     --test_sharding_strategy=forced=5 "${selection_targets[@]}"
+ci_collect "${events}/external-shards.json"
 for target in "${selection_targets[@]}"; do
     reports=("${junit_logs}/${target#//:}"/shard_*/test.xml)
     [[ "${#reports[@]}" == 5 ]]
@@ -206,11 +222,12 @@ for target in "${selection_targets[@]}"; do
     [[ "${alpha}" == 1 && "${gamma}" == 1 && "${empty}" == 2 ]]
     echo "[SHARDING VERIFIED] ${target}: five reports, each selected case once, two empty reports"
 done
-if ci_bazel external-fail-fast failure test --enable_runfiles=no --test_runner_fail_fast --test_env=FAIL_CASE=alpha \
+if bazel test --build_event_json_file="${events}/expected/external-fail-fast.json" --enable_runfiles=no --test_runner_fail_fast --test_env=FAIL_CASE=alpha \
     "${selection_targets[@]}" > selection_failure.log 2>&1; then
     echo >&2 'ERROR: intentionally failing fail-fast fixtures passed'
     exit 1
 fi
+ci_collect "${events}/expected/external-fail-fast.json"
 for target in "${selection_targets[@]}"; do
     report="${junit_logs}/${target#//:}/test.xml"
     grep -F 'tests="3" failures="1" errors="0" skipped="2"' "${report}" >/dev/null
@@ -263,10 +280,11 @@ EOF
         interrupted_targets+=(//:interrupted_sh_test)
         ;;
 esac
-if ci_bazel external-timeout failure test --enable_runfiles=no --test_timeout=10 "${interrupted_targets[@]}" > interrupted.log 2>&1; then
+if bazel test --build_event_json_file="${events}/expected/external-timeout.json" --enable_runfiles=no --test_timeout=10 "${interrupted_targets[@]}" > interrupted.log 2>&1; then
     echo >&2 'ERROR: intentionally hanging fixtures passed'
     exit 1
 fi
+ci_collect "${events}/expected/external-timeout.json"
 for target in "${interrupted_targets[@]}"; do
     grep -F "${target}" interrupted.log | grep -F TIMEOUT >/dev/null
     report="${junit_logs}/${target#//:}/test.xml"

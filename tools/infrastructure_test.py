@@ -23,9 +23,16 @@ class InfrastructureTest(unittest.TestCase):
         self.assertIn('name: Retain test diagnostics\n      if: always()', workflow)
         self.assertIn('name: test-results-${{ matrix.os }}', workflow)
         self.assertIn('retention-days: 7', workflow)
-        self.assertIn('ci_bazel root-default success test //...', workflow)
-        self.assertIn('ci_bazel root-manifest success test --enable_runfiles=no //...', workflow)
-        self.assertIn('bazel run //tools:ci_reports -- summary', workflow)
+        self.assertIn('bazel test //... --build_event_json_file=', workflow)
+        self.assertIn('bazel test --enable_runfiles=no //... --build_event_json_file=', workflow)
+        self.assertIn('bazel run //tools:ci_reports -- finalize', workflow)
+        self.assertNotIn('ci_bazel', workflow)
+        root = Path(__file__).parents[1]
+        for name in ('ci_support.sh', 'external_consumer_test.sh', 'tools_consumer_test.sh'):
+            self.assertNotIn('ci_bazel', (root / 'bashtest/tests' / name).read_text())
+        windows = (root / 'bashtest/tests/windows_runtime_test.ps1').read_text()
+        self.assertNotIn('Invoke-TestBazel', windows)
+        self.assertIn('& $bazel test //...', windows)
         summary = workflow.split('- name: Summarize JUnit results', 1)[1].split('- name: Retain test diagnostics', 1)[0]
         self.assertIn('MSYS_NO_PATHCONV: "1"', summary)
         self.assertNotIn('python3 -m unittest', workflow)

@@ -3,38 +3,28 @@
 # SPDX-FileCopyrightText: Copyright (c) M. Boerger, the MBO Works authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Private CI helpers shared by the standalone consumer scripts and root CI.
-ci_bazel() {
-    local name="${1}" expected="${2}" repo output events verb status statuses=()
-    shift 2
-    if [[ -z "${BASHTEST_CI_REPORTS:-}" ]]; then
-        bazel "${@}"
-        return
-    fi
+# Collection only: callers execute Bazel commands directly.
+ci_collect() {
+    [[ -n "${BASHTEST_CI_REPORTS:-}" ]] || return 0
+    local events="${1}" repo name
     repo="$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd)" || return 1
-    mkdir -p "${BASHTEST_CI_REPORTS}" || return 1
-    output="${BASHTEST_CI_REPORTS}/${name}"
-    mkdir "${output}" || return 1
-    output="$(cd "${output}" && pwd)" || return 1
-    case "${OSTYPE}" in
-        msys*|cygwin*) output="$(cygpath -am "${output}")" ;;
-    esac
-    events="${output}/events.json"
-    verb="${1}"
-    shift
-    if bazel "${verb}" "--build_event_json_file=${events}" "${@}" 2>&1 | tee "${output}/command.log"; then
-        statuses=("${PIPESTATUS[@]}")
-    else
-        statuses=("${PIPESTATUS[@]}")
-    fi
-    status="${statuses[0]}"
-    if [[ "${status}" == 0 && "${statuses[1]}" != 0 ]]; then status=1; fi
-    if ! (cd "${repo}" && bazel run //tools:ci_reports -- collect \
-        --events "${events}" --output "${output}" --exit-code "${status}" --expect "${expected}") \
-        > "${output}/collection.log" 2>&1; then
-        cat "${output}/collection.log" >&2
-        [[ "${status}" != 0 ]] || status=1
-    fi
+    name="${events##*/}"
+    (cd "${repo}" && bazel run //tools:ci_reports -- collect \
+        --events "${events}" --output "${BASHTEST_CI_REPORTS}/${name%.json}")
+}
+
+# Capture a failed command's results before the consumer workspace is deleted.
+ci_collect_pending() {
+    [[ -n "${BASHTEST_CI_REPORTS:-}" ]] || return 0
+    local events="${1}" logs="${2}" suite="${3}" repo log status=0
+    repo="$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd)" || return 1
+    (cd "${repo}" && bazel run //tools:ci_reports -- finalize \
+        "${events}" --destination "${BASHTEST_CI_REPORTS}") || status=1
+    mkdir -p "${BASHTEST_CI_REPORTS}/consumer-logs/${suite}" || return 1
+    for log in "${logs}"/*.log; do
+        [[ -f "${log}" ]] || continue
+        cp "${log}" "${BASHTEST_CI_REPORTS}/consumer-logs/${suite}/" || status=1
+    done
     return "${status}"
 }
 

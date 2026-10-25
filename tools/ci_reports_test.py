@@ -22,11 +22,12 @@ class CiReportsTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def events(self, *outputs):
+    def events(self, *outputs, code=0):
         events = self.root / 'events.json'
         events.write_text(''.join(json.dumps({'id': {'testResult': {'label': '//:fixture', 'shard': i + 1}},
                                             'testResult': {'status': 'FAILED', 'testActionOutput': output}}) + '\n'
-                                  for i, output in enumerate(outputs)))
+                                  for i, output in enumerate(outputs)) +
+                          json.dumps({'finished': {'exitCode': {'code': code}}}) + '\n')
         return events
 
     def manifest(self, name, expected='success', code=0, results=None, errors=None):
@@ -109,24 +110,44 @@ class CiReportsTest(unittest.TestCase):
         self.assertIn('summary size limit', text)
         self.assertEqual(report.stat().st_size, 100)
 
-    @unittest.skipUnless(os.name == 'posix', 'Bash command wrapper')
-    def test_bazel_command_exit_and_log_survive_collection(self):
-        fake = self.root / 'bazel'
-        fake.write_text('#!/usr/bin/env bash\n'
-                        'if [[ "$1" == test ]]; then echo original_diagnostic; exit 7; fi\n'
-                        'exit 0\n')
-        fake.chmod(0o755)
-        destination = self.root / 'reports'
-        environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ['PATH'],
-                           BASHTEST_CI_REPORTS=str(destination))
-        command = f'source "{ROOT}/bashtest/tests/ci_support.sh"; ci_bazel fixture failure test //:fixture'
-        result = subprocess.run(['bash', '-c', command], env=environment, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 7, result.stderr)
-        self.assertIn('original_diagnostic', (destination / 'fixture/command.log').read_text())
+    def test_finalize_recovers_failed_command_and_keeps_earlier_snapshot(self):
+        log = self.root / 'test.log'
+        log.write_text('first diagnostic')
+        events = self.events([{'name': 'test.log', 'uri': log.as_uri()}], code=3)
+        staging = self.root / 'pending'
+        staging.mkdir()
+        event_file = staging / 'root-default.json'
+        events.rename(event_file)
+        destination = self.root / 'artifact'
+        self.assertFalse(ci_reports.finalize(staging, destination))
+        invocation = destination / 'root-default'
+        self.assertEqual(json.loads((invocation / 'invocation.json').read_text())['exit_code'], 3)
+        self.assertTrue((invocation / 'events.json').is_file())
+        log.write_text('overwritten by a later invocation')
+        self.assertFalse(ci_reports.finalize(staging, destination))
+        self.assertEqual((invocation / 'result_0001/test.log').read_text(), 'first diagnostic')
+
+    def test_expected_failure_is_derived_from_event_directory(self):
+        expected = self.root / 'expected'
+        expected.mkdir()
+        events = expected / 'negative.json'
+        self.events(code=7).rename(events)
+        output = self.root / 'retained-expected'
+        self.assertEqual(ci_reports.retain(events, output), 0)
+        self.assertEqual(json.loads((output / 'invocation.json').read_text())['expected'], 'failure')
+
+    def test_run_result_does_not_claim_program_success_from_build_events(self):
+        events = self.events()
+        events.write_text(json.dumps({'started': {'command': 'run'}}) + '\n' + events.read_text())
+        output = self.root / 'run'
+        self.assertEqual(ci_reports.retain(events, output), 0)
+        text, failed = ci_reports.summarize(self.root)
+        self.assertFalse(failed)
+        self.assertIn('build passed; program exit reported by CI', text)
 
     def test_retains_original_exit_and_expectation(self):
         output = self.root / 'retained'
-        self.assertEqual(ci_reports.retain(self.events(), output, 'failure', 7), 0)
+        self.assertEqual(ci_reports.retain(self.events(code=7), output, 'failure'), 0)
         invocation = json.loads((output / 'invocation.json').read_text())
         self.assertEqual(invocation['exit_code'], 7)
         self.assertEqual(invocation['expected'], 'failure')
@@ -147,6 +168,25 @@ class CiReportsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('[UNEXPECTED CONSUMER FAILURE: invalid.log]', result.stderr)
         self.assertIn('UNEXPECTED_ANALYSIS_CAUSE', result.stderr)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX executable fixture')
+    def test_consumer_preserves_direct_bazel_failure_while_collecting_in_cleanup(self):
+        fake = self.root / 'bazel'
+        fake.write_text('#!/usr/bin/env bash\n'
+                        'case "$1" in\n'
+                        '  --version) echo "bazel 9.1.1" ;;\n'
+                        '  test) echo "ORIGINAL_TEST_FAILURE"; exit 7 ;;\n'
+                        '  run) printf "%s\\n" "$*" >> "$COLLECTION_CALLS" ;;\n'
+                        'esac\n')
+        fake.chmod(0o755)
+        calls = self.root / 'collection-calls'
+        environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ['PATH'],
+                           BASHTEST_CI_REPORTS=str(self.root / 'artifact'), COLLECTION_CALLS=str(calls))
+        result = subprocess.run(['bash', str(ROOT / 'bashtest/tests/tools_consumer_test.sh')],
+                                env=environment, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertIn('ORIGINAL_TEST_FAILURE', result.stdout)
+        self.assertIn('finalize', calls.read_text())
 
     @unittest.skipUnless(os.name == 'posix', 'Bash consumer helper')
     def test_consumer_cleanup_prints_hidden_logs_only_on_unexpected_failure(self):

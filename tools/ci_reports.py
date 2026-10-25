@@ -50,15 +50,44 @@ def collect(events, destination):
     return results, errors
 
 
-def retain(events, output, expected, status):
+def retain(events, output, expected=None):
     output.mkdir(parents=True, exist_ok=True)
     results, errors = collect(events, output)
+    status = None
+    command = None
+    try:
+        for line in events.read_text(encoding='utf-8').splitlines():
+            event = json.loads(line)
+            command = event.get('started', {}).get('command', command)
+            finished = event.get('finished', {})
+            if 'exitCode' in finished:
+                status = finished['exitCode'].get('code', 0)
+        if events.resolve() != (output / 'events.json').resolve():
+            shutil.copyfile(events, output / 'events.json')
+    except (OSError, ValueError) as error:
+        errors.append(str(error))
+    if status is None:
+        errors.append('Build events have no confirmed command exit status')
+        status = 1
+    expected = expected or ('failure' if events.parent.name == 'expected' else 'success')
     (output / 'invocation.json').write_text(json.dumps({
-        'exit_code': status, 'expected': expected, 'results': results, 'errors': errors,
+        'exit_code': status, 'expected': expected, 'command': command, 'results': results, 'errors': errors,
     }, indent=2) + '\n', encoding='utf-8')
     for error in errors:
         print(f'CI result collection: {error}', file=sys.stderr)
     return int(bool(errors))
+
+
+def finalize(events_directory, destination):
+    failed = False
+    events_files = sorted(events_directory.glob('*.json')) + sorted((events_directory / 'expected').glob('*.json'))
+    for events in events_files:
+        output = destination / events.stem
+        # Earlier snapshots must survive later commands overwriting their source.
+        if (output / 'invocation.json').exists():
+            continue
+        failed = bool(retain(events, output)) or failed
+    return failed
 
 
 class SummaryTreeBuilder(ET.TreeBuilder):
@@ -90,8 +119,9 @@ def counts(path):
 def summarize(directory):
     lines = ['## Bazel test results', '',
              'Each row is one invocation. Shards and retry attempts are retained separately; '
-             'counts include every reported attempt. Expected failures are checked by the consumer scripts.', '',
-             '<table><tr><th>Invocation</th><th>Command</th><th>Tests / failures / errors / skipped</th></tr>']
+             'counts include every reported attempt. Expected failures are checked by the consumer scripts. '
+             'For bazel run, build events describe the build; the CI step reports the program exit.', '',
+             '<table><tr><th>Invocation</th><th>Build/test result</th><th>Tests / failures / errors / skipped</th></tr>']
     details, problems = [], []
     manifests = sorted(directory.glob('*/invocation.json'))
     for index, manifest in enumerate(manifests):
@@ -100,6 +130,8 @@ def summarize(directory):
         code = invocation['exit_code']
         matched = (code == 0) == (expected == 'success')
         outcome = ('passed' if code == 0 else 'expected failure') if matched else ('UNEXPECTED PASS' if code == 0 else 'FAILED')
+        if invocation.get('command') == 'run':
+            outcome = 'build ' + outcome + '; program exit reported by CI'
         if not matched:
             problems.append(f'{manifest.parent.name}: unexpected command exit {code}')
         problems.extend(invocation['errors'])
@@ -142,15 +174,25 @@ def main():
     collector = commands.add_parser('collect')
     collector.add_argument('--events', type=Path, required=True)
     collector.add_argument('--output', type=Path, required=True)
-    collector.add_argument('--exit-code', type=int, required=True)
-    collector.add_argument('--expect', choices=('success', 'failure'), default='success')
+    collector.add_argument('--expect', choices=('success', 'failure'))
+    finalizer = commands.add_parser('finalize')
+    finalizer.add_argument('directory', type=Path)
+    finalizer.add_argument('--destination', type=Path, required=True)
+    finalizer.add_argument('--output', type=Path)
     summary = commands.add_parser('summary')
     summary.add_argument('directory', type=Path)
     summary.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.action == 'collect':
-        return retain(args.events, args.output, args.expect, args.exit_code)
-    text, failed = summarize(args.directory)
+        return retain(args.events, args.output, args.expect)
+    failed = False
+    if args.action == 'finalize':
+        failed = finalize(args.directory, args.destination)
+        if args.output is None:
+            return int(failed)
+    directory = args.destination if args.action == 'finalize' else args.directory
+    text, summary_failed = summarize(directory)
+    failed = summary_failed or failed
     with args.output.open('a', encoding='utf-8') as stream:
         stream.write(text)
     return int(failed)
