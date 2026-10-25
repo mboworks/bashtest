@@ -68,19 +68,19 @@ test::expect_eq() {
 
     expect_eq "Hello" "Hello"
     test_has_error && bad_bashtest "expect_eq with same values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_eq "Hello" "World"
     test_has_error || bad_bashtest "expect_eq with different values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_eq "Hello" "City"
     test_has_error || bad_bashtest "expect_eq with different values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_eq "Meow" "Meow"
     test_has_error && bad_bashtest "expect_eq with different values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -99,19 +99,19 @@ test::expect_ne() {
 
     expect_ne "Hello" "Hello"
     test_has_error || bad_bashtest "expect_ne with same values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_ne "Hello" "World"
     test_has_error && bad_bashtest "expect_ne with different values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_ne "Hello" "City"
     test_has_error && bad_bashtest "expect_ne with different values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_ne "Meow" "Meow"
     test_has_error || bad_bashtest "expect_ne with different values."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -130,28 +130,28 @@ test::expect_contains() {
 
     EMPTY=()
     expect_contains "foo" ${EMPTY[@]+"${EMPTY[@]}"} && bad_bashtest "Element is not present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_contains "" ${EMPTY[@]+"${EMPTY[@]}"} && bad_bashtest "Element is not present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     FOO_BAR=("foo" "bar")
     expect_contains "foo" "${FOO_BAR[@]}" || bad_bashtest "Element is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_contains "bar" "${FOO_BAR[@]}" || bad_bashtest "Element is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_contains "baz" "${FOO_BAR[@]}" && bad_bashtest "Element is not present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_contains "" "${FOO_BAR[@]}" && bad_bashtest "Element is not present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     FOO_BAR+=("")
 
     expect_contains "" "${FOO_BAR[@]}" || bad_bashtest "Element is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -170,28 +170,28 @@ test::expect_not_contains() {
 
     EMPTY=()
     expect_not_contains "foo" ${EMPTY[@]+"${EMPTY[@]}"} || bad_bashtest "Element is not present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_not_contains "" ${EMPTY[@]+"${EMPTY[@]}"} || bad_bashtest "Element is not present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     FOO_BAR=("foo" "bar")
     expect_not_contains "foo" "${FOO_BAR[@]}" && bad_bashtest "Element is present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_not_contains "bar" "${FOO_BAR[@]}" && bad_bashtest "Element is present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_not_contains "baz" "${FOO_BAR[@]}" || bad_bashtest "Element is not present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_not_contains "" "${FOO_BAR[@]}" || bad_bashtest "Element is not present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     FOO_BAR+=("")
 
     expect_not_contains "" "${FOO_BAR[@]}" && bad_bashtest "Element is present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -211,23 +211,23 @@ test::expect_output_contains() {
     TEXT=$'line one\nSECOND line\nthird'
 
     expect_output_contains "SECOND" "${TEXT}" || bad_bashtest "Substring is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_contains "ECOND li" "${TEXT}" || bad_bashtest "Substring within a line is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_contains "" "${TEXT}" || bad_bashtest "Empty substring should always be contained."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_contains "absent" "${TEXT}" && bad_bashtest "Substring is not present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     # Glob metacharacters must be treated literally.
     expect_output_contains "a*b" "has a*b literal" || bad_bashtest "Literal '*' is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_contains "a*b" "has aXXb glob" && bad_bashtest "'*' was treated as a glob, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -247,16 +247,16 @@ test::expect_output_not_contains() {
     TEXT=$'line one\nSECOND line\nthird'
 
     expect_output_not_contains "absent" "${TEXT}" || bad_bashtest "Substring is not present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_not_contains "SECOND" "${TEXT}" && bad_bashtest "Substring is present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_not_contains "" "${TEXT}" && bad_bashtest "Empty substring is always contained, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_output_not_contains "a*b" "has aXXb glob" || bad_bashtest "'*' treated as glob, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -276,26 +276,26 @@ test::expect_matches() {
     TEXT=$'line one\nSECOND line\nthird'
 
     expect_matches "SECOND" "${TEXT}" || bad_bashtest "Unanchored regex is present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_matches "l[a-z]+ one" "${TEXT}" || bad_bashtest "ERE class should match 'line one'."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_matches "^line one" "${TEXT}" || bad_bashtest "'^' should anchor the start of the text."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_matches "third\$" "${TEXT}" || bad_bashtest "'\$' should anchor the end of the text."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     # Whole-text anchoring: '^SECOND' must NOT match, SECOND is not at the start.
     expect_matches "^SECOND" "${TEXT}" && bad_bashtest "'^' must anchor the whole text, not each line."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_matches "absent" "${TEXT}" && bad_bashtest "Regex is not present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_matches "[[:digit:]]+" "abc123" || bad_bashtest "POSIX digit class should match."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -315,14 +315,14 @@ test::expect_not_matches() {
     TEXT=$'line one\nSECOND line\nthird'
 
     expect_not_matches "absent" "${TEXT}" || bad_bashtest "Regex is not present, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     expect_not_matches "SECOND" "${TEXT}" && bad_bashtest "Regex is present, yet test passed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     # Whole-text anchoring: '^SECOND' does not match, so not_matches should pass.
     expect_not_matches "^SECOND" "${TEXT}" || bad_bashtest "'^SECOND' does not anchor-match, yet test failed."
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
     [[ "${_BASHTEST_NUM_FAIL}" == "${NUM_FAIL}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_FAIL."
@@ -342,14 +342,14 @@ test::expect_pcre_matches() {
     if [[ -n "$(_bashtest_pcre_cmd)" ]]; then
         # '\d' is a PCRE-ism unavailable in bash's ERE engine.
         expect_pcre_matches '\d+' "abc123" || bad_bashtest "PCRE '\\d+' should match digits."
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
 
         expect_pcre_matches '\d+' "no digits here" && bad_bashtest "PCRE '\\d+' matched a digitless text."
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
     else
         echo "No PCRE tool available; verifying the matcher fails gracefully."
         expect_pcre_matches '\d+' "abc123" && bad_bashtest "Without a PCRE tool the matcher must fail, yet it passed."
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
     fi
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."
@@ -369,14 +369,14 @@ test::expect_pcre_not_matches() {
 
     if [[ -n "$(_bashtest_pcre_cmd)" ]]; then
         expect_pcre_not_matches '\d+' "no digits here" || bad_bashtest "PCRE '\\d+' is absent, yet not_matches failed."
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
 
         expect_pcre_not_matches '\d+' "abc123" && bad_bashtest "PCRE '\\d+' is present, yet not_matches passed."
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
     else
         echo "No PCRE tool available; verifying the matcher fails gracefully."
         expect_pcre_not_matches '\d+' "abc123" && bad_bashtest "Without a PCRE tool the matcher must fail, yet it passed."
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
     fi
 
     [[ "${_BASHTEST_NUM_PASS}" == "${NUM_PASS}" ]] || bad_bashtest "Test modified _BASHTEST_NUM_PASS."

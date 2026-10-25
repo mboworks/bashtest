@@ -45,6 +45,8 @@ _BASHTEST_USAGE=$(cat <<'EOF'
 * --gtest-output `<xml[:path]>` Write JUnit XML (also accepts GTEST_OUTPUT).
                                 Bazel sets XML_OUTPUT_FILE automatically.
 * --gtest-filter                Like '-f' but uses glob patterns.
+* --strict-commands             Record unhandled command failures using ERR traps.
+                                Requires a standalone test_runner call.
 * --no-skip                     Turn every `skip_test` into a failure. For an
                                 environment that GUARANTEES the capability a
                                 test probes for, so a skip cannot quietly
@@ -62,6 +64,11 @@ Note: If long test flags are denoted with '-'s, then '_' can also be used, e.g.
 '--test_filter' and '--test-filter' are both long forms for '-f'.
 
 ## Assertions:
+
+* expect_success <command> [args...]
+  Assert that a command exits 0, preserving its argument boundaries and output.
+* expect_exit_code <status> <command> [args...]
+  Assert the final command exit status (0..255).
 
 * expect_eq "${LHS}" "${RHS}"
                             Asserts that two strings are the same.
@@ -164,6 +171,7 @@ _BASHTEST_FILTER_GLOB=""
 _BASHTEST_KEEP_TMPDIR="failure"
 _BASHTEST_UPDATE_GOLDEN=""
 _BASHTEST_VERBOSE=
+_BASHTEST_STRICT_COMMANDS=0
 
 ################################################################################
 # Flag parsing:
@@ -229,6 +237,7 @@ while getopts -- '-:f:hu:v' OPTION; do
             esac
             ;;
         no[-_]skip) _BASHTEST_NO_SKIP=1 ;;
+        strict[-_]commands) _BASHTEST_STRICT_COMMANDS=1 ;;
         u|update[-_]golden) _BASHTEST_UPDATE_GOLDEN="${OPTARG}" ;;
         v|verbose) _BASHTEST_VERBOSE=1 ;;
         *) die "Unknown flag '${OPTERR}'." ;;
@@ -301,6 +310,9 @@ trap 'exit 143' TERM
 mkdir -p "${TEST_TMPDIR:=/tmp/$(date "+%Y%m%dT%H%M%S")}"
 BASHTEST_TMPDIR="$(mktemp -d -p "${TEST_TMPDIR}")"
 declare -r BASHTEST_TMPDIR
+# Descendant shells inherit this path, so expectation failures survive subshells.
+_BASHTEST_FAILURE_FILE="${BASHTEST_TMPDIR}/current-failure"
+: > "${_BASHTEST_FAILURE_FILE}"
 
 # Creates one uniquely named directory below bashtest's owned scratch root and prints its path.
 # The optional name is a basename prefix only: accepting a path would let a test escape cleanup.
@@ -311,6 +323,16 @@ test_tmpdir() {
         die "Temporary-directory name must be a basename: '${name}'."
     fi
     mktemp -d "${BASHTEST_TMPDIR}/${name}.XXXXXX"
+}
+
+_bashtest_record_failure() {
+    _BASHTEST_HAS_ERROR=1
+    printf 'failure\n' >> "${_BASHTEST_FAILURE_FILE}"
+}
+
+_bashtest_reset_error() {
+    _BASHTEST_HAS_ERROR=0
+    : > "${_BASHTEST_FAILURE_FILE}"
 }
 
 # Escape XML text and replace bytes that are not legal UTF-8/XML 1.0 with '?'.
@@ -372,20 +394,98 @@ _bashtest_xml_init() {
     _BASHTEST_XML_STARTED=1
 }
 
+# Scoped ERR handling is opt-in: Bash disables it for conditional function calls.
+_bashtest_strict_enter() {
+    _BASHTEST_PREVIOUS_ERREXIT=0
+    _BASHTEST_PREVIOUS_ERRTRACE=0
+    [[ "${-}" != *e* ]] || _BASHTEST_PREVIOUS_ERREXIT=1
+    [[ "${-}" != *E* ]] || _BASHTEST_PREVIOUS_ERRTRACE=1
+    trap -p ERR > "${BASHTEST_TMPDIR}/previous-err-trap.sh"
+    set +e -E
+}
+
+_bashtest_strict_leave() {
+    trap - ERR
+    # Restore Bash's own serialized trap, including quoted/multiline caller code.
+    # shellcheck disable=SC1091 # File is written by trap -p in _bashtest_strict_enter.
+    source "${BASHTEST_TMPDIR}/previous-err-trap.sh"
+    [[ "${_BASHTEST_PREVIOUS_ERRTRACE}" == 1 ]] || set +E
+    [[ "${_BASHTEST_PREVIOUS_ERREXIT}" != 1 ]] || set -e
+    return 0
+}
+
+_bashtest_strict_check_context() {
+    _bashtest_strict_enter
+    _BASHTEST_STRICT_CONTEXT_OK=0
+    trap '_BASHTEST_STRICT_CONTEXT_OK=1' ERR
+    false
+    _bashtest_strict_leave
+}
+
+_bashtest_command_error() {
+    # An assertion already supplies its own diagnostic; don't duplicate it as a
+    # command failure at each enclosing function frame.
+    if test_has_error; then
+        return 0
+    fi
+    _bashtest_record_failure
+    echo >&2 "Unhandled command failure (status ${1}): ${2}"
+}
+
+_bashtest_execute() {
+    _BASHTEST_RESULT=0
+    if [[ "${_BASHTEST_STRICT_COMMANDS}" == 1 ]]; then
+        _bashtest_strict_enter
+        trap '_bashtest_command_error "${?}" "${BASH_COMMAND}"' ERR
+        # Deliberately unguarded: if/!/&&/|| here would suppress descendant ERR traps.
+        "${1}"
+        _BASHTEST_RESULT="${?}"
+        _bashtest_strict_leave
+    else
+        "${1}" || _BASHTEST_RESULT="${?}"
+    fi
+}
+
+# Assert a command's final exit code, preserving argv and same-shell function state.
+expect_exit_code() {
+    local expected="${1:-}" actual=0
+    if [[ "${#}" -lt 2 || -z "${2:-}" || ! "${expected}" =~ ^(0|[1-9][0-9]{0,2})$ ]] || ((expected > 255)); then
+        _bashtest_record_failure
+        echo >&2 'Test failure: expect_exit_code requires a status in 0..255 and a command.'
+        return 1
+    fi
+    shift
+    "${@}" || actual="${?}"
+    if [[ "${actual}" != "${expected}" ]]; then
+        _bashtest_record_failure
+        echo >&2 "Test failure: expected command exit ${expected}, got ${actual}: ${*}"
+        return 1
+    fi
+    return 0
+}
+
+expect_success() {
+    expect_exit_code 0 ${@+"${@}"}
+}
+
 # Execute in this shell: state set by setup and test functions must remain visible.
 # Only report-enabled runs buffer output, replaying it after each function.
 _bashtest_invoke() {
     _BASHTEST_RESULT=0
     if [[ "${_BASHTEST_XML_STARTED}" == 0 ]]; then
-        "${1}" || _BASHTEST_RESULT="${?}"
+        _bashtest_execute "${1}"
     else
         _BASHTEST_XML_ACTIVE="${1#test::}"
         _BASHTEST_XML_CASE_START="${SECONDS}"
         _BASHTEST_XML_LOG="${BASHTEST_TMPDIR}/junit-current.log"
         _BASHTEST_XML_STDOUT="${BASHTEST_TMPDIR}/junit-stdout.log"
         _BASHTEST_XML_STDERR="${BASHTEST_TMPDIR}/junit-stderr.log"
-        "${1}" 198>&1 199>&2 > "${_BASHTEST_XML_STDOUT}" 2> "${_BASHTEST_XML_STDERR}" || _BASHTEST_RESULT="${?}"
+        _bashtest_execute "${1}" 198>&1 199>&2 > "${_BASHTEST_XML_STDOUT}" 2> "${_BASHTEST_XML_STDERR}"
         _bashtest_xml_replay
+    fi
+    # A successful final command must not erase a failure in a descendant shell.
+    if test_has_error; then
+        _BASHTEST_HAS_ERROR=1
     fi
 }
 
@@ -467,7 +567,7 @@ function _bashtest_handler() {
         fi
     fi
     echo "[  TEST  ] ${TEST_NAME}"
-    _BASHTEST_HAS_ERROR=0
+    _bashtest_reset_error
     _BASHTEST_SKIPPED=0
     _BASHTEST_SKIP_REASON=
     _bashtest_invoke "${FUNC_NAME}"
@@ -509,7 +609,7 @@ skip_test() {
 
 # Returns whether a test function has had an expectation error. This is reset for every test function.
 test_has_error() {
-    [[ "${_BASHTEST_HAS_ERROR}" != "0" ]]
+    [[ "${_BASHTEST_HAS_ERROR}" != "0" || -s "${_BASHTEST_FAILURE_FILE}" ]]
 }
 
 # Returns whether a test program had previous failing test functions.
@@ -530,6 +630,16 @@ _bashtest_contains_element () {
 function test_runner() {
     _bashtest_xml_init
     _BASHTEST_XML_RUNNING=1
+    if [[ "${_BASHTEST_STRICT_COMMANDS}" == 1 ]]; then
+        _bashtest_strict_check_context
+        if [[ "${_BASHTEST_STRICT_CONTEXT_OK}" == 0 ]]; then
+            echo >&2 'ERROR: --strict-commands requires a standalone test_runner call, outside conditional or status-masking contexts.'
+            _bashtest_xml_case error test_runner "Strict command checking is disabled by a conditional runner call."
+            _BASHTEST_XML_RUNNING=0
+            _bashtest_xml_write || return 1
+            return 1
+        fi
+    fi
     if [[ -n "${_BASHTEST_FILTER_GLOB}" ]]; then
         echo "Test filter glob: '${_BASHTEST_FILTER_GLOB}'."
     fi
@@ -540,7 +650,7 @@ function test_runner() {
     TEST_FUNCS=()
     while IFS='' read -r line; do TEST_FUNCS+=("${line}"); done < <(declare -F|LC_ALL=C sed -rne 's,^declare -f test::(.*)$,\1,p')
     if _bashtest_contains_element "test_init" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
         _bashtest_invoke test::test_init
         if [[ "${_BASHTEST_RESULT}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]]; then
             _bashtest_xml_case error test_init "Test initialization failed."
@@ -559,7 +669,7 @@ function test_runner() {
         fi
     done
     if _bashtest_contains_element "test_done" ${TEST_FUNCS[@]+"${TEST_FUNCS[@]}"}; then
-        _BASHTEST_HAS_ERROR=0
+        _bashtest_reset_error
         _bashtest_invoke test::test_done
         if [[ "${_BASHTEST_RESULT}" != 0 || "${_BASHTEST_HAS_ERROR}" != 0 ]]; then
             _BASHTEST_DONE_FAILED=1
@@ -684,7 +794,7 @@ expect_files_eq() {
     FILE_REL_OUTPUT="$(_bashtest_relative_path "${FILE_OUTPUT}")"
 
     if [[ ! -r "${FILE_GOLDEN}" ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: golden file readable."
@@ -692,7 +802,7 @@ expect_files_eq() {
         return 1
     fi
     if [[ ! -r "${FILE_RESULT}" ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: result file readable."
@@ -703,7 +813,7 @@ expect_files_eq() {
     diff -u --label "a/${FILE_REL_GOLDEN}" --label "b/${FILE_REL_GOLDEN}" \
         "${FILE_GOLDEN}" "${FILE_RESULT}" > "${FILE_OUTPUT}" 2>&1 || diff_status="${?}"
     if [[ "${diff_status}" -gt 1 ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 "ERROR: diff failed (status ${diff_status}); golden file was not updated."
         cat >&2 "${FILE_OUTPUT}"
         return 1
@@ -712,7 +822,7 @@ expect_files_eq() {
         if [[ -n "${_BASHTEST_UPDATE_GOLDEN}" ]]; then
             UPDATE_FILE="${_BASHTEST_UPDATE_GOLDEN}/${FILE_REL_GOLDEN}"
             if [[ ! -w "${UPDATE_FILE}" ]]; then
-                _BASHTEST_HAS_ERROR=1
+                _bashtest_record_failure
                 echo >&2 ""
                 echo >&2 "Test failure:"
                 echo >&2 "  Expected: golden file is writable."
@@ -728,7 +838,7 @@ expect_files_eq() {
                 echo "Updated golden file '${FILE_REL_GOLDEN}'."
                 return 0
             else
-                _BASHTEST_HAS_ERROR=1
+                _bashtest_record_failure
                 echo >&2 ""
                 echo >&2 "Test failure:"
                 echo >&2 "  Expected: golden file gets updated."
@@ -737,7 +847,7 @@ expect_files_eq() {
                 return 1  # Technically we die, but that could be an option.
             fi
         fi
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         _BASHTEST_SUGGEST_UPDATE=1
         echo >&2 ""
         echo >&2 "Test failure:"
@@ -781,7 +891,7 @@ expect_eq() {
         TEXT_RESULT_OUT="${TEXT_RESULT_OUT:0:47}..."
     fi
     if [[ "${TEXT_GOLDEN}" != "${TEXT_RESULT}" ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: strings are equal:"
@@ -819,7 +929,7 @@ expect_ne() {
         TEXT_RESULT_OUT="${TEXT_RESULT_OUT:0:47}..."
     fi
     if [[ "${TEXT_GOLDEN}" == "${TEXT_RESULT}" ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: strings are different:"
@@ -857,7 +967,7 @@ expect_contains() {
         fi
         return 0
     else
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: element is present in array:"
@@ -886,7 +996,7 @@ expect_not_contains() {
         fi
         return 0
     else
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: element is NOT present in array:"
@@ -929,7 +1039,7 @@ _bashtest_ere_match() {
 }
 
 _bashtest_invalid_regex() {
-    _BASHTEST_HAS_ERROR=1
+    _bashtest_record_failure
     echo >&2 ""
     echo >&2 "Test failure:"
     echo >&2 "  Invalid extended regular expression: '${1}'."
@@ -956,7 +1066,7 @@ expect_matches() {
             _bashtest_invalid_regex "${REGEX}"
             return 1
         fi
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text matches regex:"
@@ -984,7 +1094,7 @@ expect_not_matches() {
     local regex_status=0
     _bashtest_ere_match "${REGEX}" "${TEXT}" || regex_status="${?}"
     if [[ "${regex_status}" == 0 ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text does NOT match regex:"
@@ -1029,7 +1139,7 @@ expect_output_contains() {
         fi
         return 0
     else
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text contains substring:"
@@ -1055,7 +1165,7 @@ expect_output_not_contains() {
     shift
     TEXT_OUT="$(_bashtest_ellipsize "${TEXT}")"
     if [[ "${TEXT}" == *"${SUBSTR}"* ]]; then
-        _BASHTEST_HAS_ERROR=1
+        _bashtest_record_failure
         echo >&2 ""
         echo >&2 "Test failure:"
         echo >&2 "  Expected: text does NOT contain substring:"
@@ -1147,7 +1257,7 @@ expect_pcre_matches() {
         fi
         return 0
     fi
-    _BASHTEST_HAS_ERROR=1
+    _bashtest_record_failure
     echo >&2 ""
     echo >&2 "Test failure:"
     if [[ "${rc}" == "3" ]]; then
@@ -1186,7 +1296,7 @@ expect_pcre_not_matches() {
         fi
         return 0
     fi
-    _BASHTEST_HAS_ERROR=1
+    _bashtest_record_failure
     echo >&2 ""
     echo >&2 "Test failure:"
     if [[ "${rc}" == "3" ]]; then

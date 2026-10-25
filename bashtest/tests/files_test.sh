@@ -30,8 +30,8 @@ test::golden_paths_and_updates() {
     cp "${golden}" "${result}"
     expect_files_eq "${golden}" "${result}"
     printf 'new\n' > "${result}"
-    # Run expected failures in a subshell so the enclosing case stays successful.
-    if (expect_files_eq "${golden}" "${result}"); then
+    # This verifier owns an isolated marker for intentionally failed expectations.
+    if (_BASHTEST_FAILURE_FILE="${root}/expected-mismatch"; expect_files_eq "${golden}" "${result}"); then
         expect_eq failure success
     fi
     expect_output_contains '+new' "$(cat "${result}.diff")"
@@ -77,6 +77,7 @@ test::diff_error_does_not_update_golden() {
         # shellcheck disable=SC2329 # Called indirectly by expect_files_eq.
         diff() { echo >&2 'simulated diff error'; return 2; }
         _BASHTEST_UPDATE_GOLDEN="${root}"
+        _BASHTEST_FAILURE_FILE="${root}/expected-diff-error"
         expect_files_eq "${root}/golden.txt" "${root}/result.txt"
     ) || status="${?}"
     expect_eq 1 "${status}"

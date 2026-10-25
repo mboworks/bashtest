@@ -27,6 +27,51 @@ The macro supports directory and manifest-only runfiles on Linux, macOS, and
 Windows x86-64 with an automatically provisioned MSYS2 runtime. See the root [installation requirements](../README.md#installation-and-requirements)
 for Windows setup and resolving data dependencies with `rlocation`.
 
+## Command failure handling
+
+`expect_success command args...` checks for exit status 0.
+`expect_exit_code status command args...` checks for the specified status in
+0..255. Arguments are passed directly without string evaluation; stdout and
+stderr are preserved, and shell functions run in the same shell:
+
+```sh
+test::generator() {
+    expect_success "${GENERATOR}" --output "${TEST_TMPDIR}/result with spaces"
+    expect_exit_code 2 "${GENERATOR}" --invalid-option
+}
+```
+
+A failed expectation remains a failure even if its return status is handled or
+followed by a successful command. This includes expectations in command
+substitutions, `(subshells)`, and background jobs that the test waits for.
+`test_has_error` sees these failures in the parent shell. Tests must wait for
+background work before returning. Each test and lifecycle hook starts with a
+fresh error state; failures do not leak into subsequent cases.
+
+By default, ordinary commands follow Bash's final-return-status semantics.
+Calling a test function to collect its return code suppresses `set -e` within
+that function, so `false; echo done` alone does not fail a case. Use command
+expectations, or opt into strict checking:
+
+```sh
+bazel test //path:my_test --test_arg=--strict-commands
+```
+
+`--strict-commands` (also `--strict_commands`) records unhandled nonzero command
+and pipeline statuses through Bash's `ERR` trap, even if a later command succeeds.
+It covers setup, test bodies, teardown, and inherited subshells. Expected failures
+handled by `if`, `!`, `&&`, or `||` retain ordinary Bash semantics. Command-exit
+expectations deliberately check the command's final status, including expected
+nonzero statuses. Strict checking collects failures rather than stopping at the
+first one, and shared setup/test state is preserved.
+
+Strict mode requires `test_runner` as a standalone statement, outside conditional
+or other contexts that suppress Bash error traps. Unsupported invocation produces
+an explicit runner error before tests execute. The runner temporarily owns the
+`ERR` trap and `errexit`/`errtrace` options during each function and restores the
+caller's settings afterward; do not replace that trap inside a strict test.
+Default mode preserves existing conditional runner calls and caller error options.
+
 ## Executable tools
 
 Use `tools` to build helper executables for the test execution platform and export

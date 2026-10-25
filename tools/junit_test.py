@@ -20,9 +20,9 @@ class JunitTest(unittest.TestCase):
         self.root = Path(temporary.name)
         self.xml = self.root / 'bazel result.xml'
 
-    def run_probe(self, body, *args, output=True, **environment):
+    def run_probe(self, body, *args, output=True, runner='test_runner', **environment):
         script = self.root / 'probe.sh'
-        script.write_text('set -euo pipefail\nsource "$LIBRARY"\n' + body + '\ntest_runner\n')
+        script.write_text('set -euo pipefail\nsource "$LIBRARY"\n' + body + '\n' + runner + '\n')
         env = {key: value for key, value in os.environ.items()
                if key not in ('GTEST_OUTPUT', 'XML_OUTPUT_FILE', 'TEST_TARGET')}
         env.update(LIBRARY=str(ROOT / 'bashtest/bashtest.sh'), TEST_TMPDIR=str(self.root))
@@ -101,6 +101,96 @@ test::test_done() { expect_eq changed "$state"; }
                         self.assertIsNotNone(self.report()['bad'].find('failure'))
         result = self.run_probe('test::valid() { expect_not_matches "needle" "haystack"; }')
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_assertions_in_subshells_cannot_disappear(self):
+        for output in (True, False):
+            for command in ('local captured; captured="$(expect_eq yes no)"',
+                            '(expect_eq yes no)', 'expect_eq yes no & wait'):
+                with self.subTest(output=output, command=command):
+                    result = self.run_probe(f'''
+test::a_failure() {{ {command}; if test_has_error; then echo failure_observed; fi; return 0; }}
+test::b_after() {{ test_has_error && return 8; expect_eq ok ok; }}
+''', output=output)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(b'[  FAIL  ] a_failure', result.stderr)
+                    self.assertIn(b'failure_observed', result.stdout)
+                    self.assertIn(b'[  PASS  ] b_after', result.stdout)
+                    if output:
+                        cases = self.report()
+                        self.assertIsNotNone(cases['a_failure'].find('failure'))
+                        self.assertIsNone(cases['b_after'].find('failure'))
+
+    def test_hook_subshell_assertions_are_errors(self):
+        for hook in ('test_init', 'test_done'):
+            result = self.run_probe(f'test::{hook}() {{ local result; result="$(expect_eq yes no)"; return 0; }}\n'
+                                    'test::body() { :; }')
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIsNotNone(self.report()[hook].find('error'))
+
+    def test_strict_commands_detect_unhandled_failures(self):
+        commands = ('false; echo after', 'local result; result="$(false; echo after)"',
+                    '(false; echo after)', 'false | true; echo after')
+        for output in (True, False):
+            for command in commands:
+                with self.subTest(command=command, output=output):
+                    result = self.run_probe(f'test::bad() {{ {command}; return 0; }}',
+                                            '--strict-commands', output=output)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(b'Unhandled command failure', result.stderr)
+                    if output:
+                        self.assertIsNotNone(self.report()['bad'].find('failure'))
+
+    def test_strict_commands_allow_handled_statuses_and_preserve_state(self):
+        result = self.run_probe('''
+state=initial
+test::test_init() { state=setup; }
+test::a_handled() {
+    if false; then return 9; fi
+    false || :
+    ! false
+    expect_exit_code 3 "$BASH" -c 'exit 3'
+    expect_success echo 'argument with spaces'
+    expect_eq setup "$state"
+    state=changed
+}
+test::b_state() { expect_eq changed "$state"; }
+''', '--strict_commands')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(b'Unhandled command failure', result.stderr)
+        self.assertIn(b'argument with spaces', result.stdout)
+
+    def test_strict_commands_reject_conditional_runner_calls(self):
+        for runner in ('if test_runner; then exit 9; else exit 1; fi',
+                       'test_runner || exit 1'):
+            result = self.run_probe('test::body() { echo should_not_run; }',
+                                    '--strict-commands', runner=runner)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn(b'requires a standalone test_runner', result.stderr)
+            self.assertNotIn(b'should_not_run', result.stdout)
+            self.assertIsNotNone(self.report()['test_runner'].find('error'))
+
+    def test_strict_mode_restores_caller_error_trap_and_shell_options(self):
+        result = self.run_probe('''
+trap 'echo original_error_trap' ERR
+before_options="$-"
+test::body() { expect_eq ok ok; }
+''', '--strict-commands', runner='test_runner\n'
+                                '[[ "$-" == "$before_options" ]]\ntrap -p ERR')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b'original_error_trap', result.stdout)
+
+    def test_command_assertions_work_without_strict_mode(self):
+        result = self.run_probe('''
+state=initial
+helper() { state=changed; return 3; }
+test::commands() { expect_exit_code 3 helper; expect_eq changed "$state"; expect_success true; }
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for command in ('expect_success false', 'expect_exit_code 2 true',
+                        'expect_exit_code invalid false', 'expect_success'):
+            result = self.run_probe(f'test::bad() {{ {command}; return 0; }}')
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIsNotNone(self.report()['bad'].find('failure'))
 
     def test_skip_is_failure_under_no_skip(self):
         result = self.run_probe('test::skip() { skip_test "not available"; }', '--no-skip')

@@ -1,5 +1,10 @@
 # 0.7.1
 
+* Preserve assertion failures across command substitutions, subshells, and waited
+  background jobs. Add `expect_success`, `expect_exit_code`, and opt-in
+  `--strict-commands` checking for unhandled command failures without discarding
+  shared setup/test state.
+
 * Prevent skip requests from hiding failed expectations or nonzero returns.
   Reject invalid extended regular expressions in both positive and negative
   assertions instead of treating syntax errors as nonmatches.
