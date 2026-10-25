@@ -240,8 +240,9 @@ whose completion was not yet recorded. Readers detect coordinator death, drain
 a finite snapshot, and exit even without a stop request. Output already streamed
 remains in Bazel's test log; use
 `--test_output=streamed` to see output while Bazel runs. Catchable signals finalize
-the report with available output. A failed progress-report write prevents the
-function from running and fails the target. Reporting begins at `test_runner`;
+the report with available output. A failed progress-report write prevents a new
+setup/test body from running and fails the target. Teardown still runs so a
+reporting failure cannot prevent cleanup. Reporting begins at `test_runner`;
 if termination happens before any report exists, Bazel supplies its fallback.
 
 Nested runner/verifier scripts should select their own output file, or disable

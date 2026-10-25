@@ -236,7 +236,7 @@ test::body() {
         report) mv "${REPORT_DIRECTORY}" "${REPORT_DIRECTORY}.moved" ;;
     esac
 }
-test::test_done() { if [[ "${PROBE}" == teardown ]]; then return 7; fi; }
+test::test_done() { printf done > "${DONE_RECORD}"; if [[ "${PROBE}" == teardown ]]; then return 7; fi; }
 test_runner
 PROBE
     for probe in pass failure setup teardown abort report; do
@@ -247,10 +247,14 @@ PROBE
             [[ "${probe}" != abort ]] || expected=42
             output="$(_junit_probe PROBE="${probe}" SCRATCH_RECORD="${root}/scratch.path" \
                 REPORT_DIRECTORY="${root}/reports-${probe}-${mode}" GTEST_OUTPUT="xml:${root}/reports-${probe}-${mode}/result.xml" \
+                DONE_RECORD="${root}/done-${probe}-${mode}" \
                 "${BASH}" "${root}/probe.sh" --keep-tmpdir="${mode}" 2>&1)" || status="${?}"
             expect_eq "${expected}" "${status}"
             if [[ "${probe}" == report ]]; then
                 expect_output_contains 'Cannot write JUnit report' "${output}"
+            fi
+            if [[ "${probe}" != abort ]]; then
+                expect_success test -f "${root}/done-${probe}-${mode}"
             fi
             scratch="$(cat "${root}/scratch.path")"
             retained=0

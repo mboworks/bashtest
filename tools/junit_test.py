@@ -389,6 +389,18 @@ test::test_done() { kill "$service_pid"; wait "$service_pid" || :; }
         self.assertIn(b'Cannot start test output capture', result.stderr)
         self.assertIsNotNone(self.report()['test_runner'].find('error'))
 
+    def test_teardown_runs_when_its_progress_report_cannot_be_written(self):
+        directory = self.root / 'report directory'
+        cleaned = self.root / 'cleanup completed'
+        result = self.run_probe('''
+test::body() { mv "$REPORT_DIRECTORY" "$REPORT_DIRECTORY.moved"; }
+test::test_done() { printf cleaned > "$CLEANED"; }
+''', f'--gtest_output=xml:{directory}/result.xml',
+                                REPORT_DIRECTORY=str(directory), CLEANED=str(cleaned))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(cleaned.read_text(), 'cleaned')
+        self.assertIn(b'Cannot write JUnit progress report', result.stderr)
+
     def test_progress_report_failure_stops_the_case(self):
         result = self.run_probe('mktemp() { return 1; }\ntest::body() { echo must_not_run; }')
         self.assertEqual(result.returncode, 1, result.stderr)

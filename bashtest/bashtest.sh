@@ -736,6 +736,12 @@ _bashtest_invoke() {
                 _BASHTEST_RUNNER_FAILED=1
                 _bashtest_record_failure
                 echo >&2 "ERROR: Cannot write JUnit progress report: ${_BASHTEST_XML_PATH}"
+                # Reporting must not prevent user cleanup from releasing a
+                # service or fixture after a report destination becomes invalid.
+                if [[ "${1}" == test::test_done ]]; then
+                    _bashtest_execute "${1}" >> "${_BASHTEST_CAPTURE_OUT}" 2>> "${_BASHTEST_CAPTURE_ERR}"
+                    _bashtest_capture_case_finish
+                fi
             else
                 _bashtest_execute "${1}" >> "${_BASHTEST_CAPTURE_OUT}" 2>> "${_BASHTEST_CAPTURE_ERR}"
                 _bashtest_capture_case_finish
