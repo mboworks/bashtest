@@ -1,6 +1,7 @@
 # Verify that tests bootstrap their own Bash and Unix utilities.
 $ErrorActionPreference = 'Stop'
-$bazel = (Get-Command bazel).Source
+# Use one native launcher: PowerShell script parameter binding consumes --.
+$bazel = (Get-Command bazel -CommandType Application | Select-Object -First 1).Source
 function Invoke-TestBazel([string] $name, [string[]] $bazelArgs) {
     if (-not $env:BASHTEST_CI_REPORTS) {
         & $bazel @bazelArgs
