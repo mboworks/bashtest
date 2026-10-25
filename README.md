@@ -25,6 +25,8 @@ locally or with `--sandbox_debug`.
 * status helper `test_has_error`: Returns whether a test function has had an expectation error. This is reset for every test function.
 * status helper `test_has_failed_tests`: Returns whether a test program had previous failing test functions.
 * scratch helper `test_tmpdir [name]`: Creates and prints a unique directory below `${BASHTEST_TMPDIR}`.
+* expectation `expect_success command [args...]`: Assert a command exits 0.
+* expectation `expect_exit_code status command [args...]`: Assert a command's final exit status.
 * expectation `expect_eq` "\${LHS}" "\${RHS}": Asserts that two strings are the same.
 * expectation `expect_ne` "\${LHS}" "\${RHS}": Asserts that two strings are different.
 * expectation `expect_files_eq` "\${LHS}" "\${RHS}": Asserts that two files are the same (supports golden updates).
@@ -70,6 +72,14 @@ bashtest(
     srcs = ["sh_test.sh"],
 )
 ```
+
+### Checking commands
+
+Use `expect_success command args...` or `expect_exit_code status command args...`
+to check command execution. Bash's `set -e` alone does not reliably detect command
+failures inside test functions. Opt into `--strict-commands` to also record
+unhandled command failures; this requires a standalone `test_runner` call.
+See [command failure handling](bashtest/README.md#command-failure-handling).
 
 ### Matching command output
 
