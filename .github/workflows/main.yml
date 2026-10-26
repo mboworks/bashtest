@@ -20,19 +20,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: bazel-contrib/setup-bazel@0.19.1
         with:
-          python-version: '3.13'
-      - run: python3 -m unittest discover -s tools -p release_site_test.py
-      - run: python3 -m unittest discover -s tools -p release_notes_test.py
-      - run: python3 -m unittest discover -s tools -p site_artwork_test.py
-      - run: python3 -m unittest discover -s tools -p infrastructure_test.py
+          cache-save: false
+          bazelisk-cache: true
       - name: Verify configured documentation and generated links
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # This is a disposable build on the runner, never a Pages publication.
-          python3 tools/release_site.py . "${RUNNER_TEMP}/release-site-check" \
+          bazel run //tools:release_site -- "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}/release-site-check" \
             --repository "${GITHUB_REPOSITORY}" --tag 0.0.0-verification --latest ""
 
   pre-commit:
@@ -58,6 +55,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v7
+    - name: Configure report capture
+      shell: bash
+      run: |
+        mkdir -p "${RUNNER_TEMP}/test-results"
+        echo "BASHTEST_CI_REPORTS=${RUNNER_TEMP}/test-results" >> "${GITHUB_ENV}"
     - uses: bazel-contrib/setup-bazel@0.19.1
       with:
         cache-save: ${{ github.ref == 'refs/heads/main' }}
@@ -72,8 +74,10 @@ jobs:
       env:
         MSYS_NO_PATHCONV: "1"
       run: |
-        bazel test //...
-        bazel test --enable_runfiles=no //...
+        bazel test //... --build_event_json_file="${BASHTEST_CI_REPORTS}/root-default.json"
+        bazel run //tools:ci_reports -- collect --events "${BASHTEST_CI_REPORTS}/root-default.json" --output "${BASHTEST_CI_REPORTS}/root-default"
+        bazel test --enable_runfiles=no //... --build_event_json_file="${BASHTEST_CI_REPORTS}/root-manifest.json"
+        bazel run //tools:ci_reports -- collect --events "${BASHTEST_CI_REPORTS}/root-manifest.json" --output "${BASHTEST_CI_REPORTS}/root-manifest"
     - name: Test external module consumer
       if: runner.os != 'Windows'
       env:
@@ -87,6 +91,22 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: ./bashtest/tests/windows_runtime_test.ps1
+
+    - name: Summarize JUnit results
+      if: always()
+      env:
+        MSYS_NO_PATHCONV: "1"
+      shell: bash
+      run: bazel run //tools:ci_reports -- finalize "${BASHTEST_CI_REPORTS}" --destination "${BASHTEST_CI_REPORTS}" --output "${GITHUB_STEP_SUMMARY}"
+
+    - name: Retain test diagnostics
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: test-results-${{ matrix.os }}
+        path: ${{ runner.temp }}/test-results
+        if-no-files-found: warn
+        retention-days: 7
 
   done:
     permissions:

@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: Copyright (c) M. Boerger, the MBO Works authors
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+py_library(
+    name = "tool_lib",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["*_test.py"],
+    ),
+    imports = ["."],
+)
+
+py_binary(
+    name = "ci_reports",
+    srcs = ["ci_reports.py"],
+)
+
+py_binary(
+    name = "release_site",
+    srcs = ["release_site.py"],
+)
+
+filegroup(
+    name = "test_data",
+    srcs = glob([
+        "*.sh",
+        "*.txt",
+    ]) + [
+        "//:tool_test_data",
+        "//bashtest:bashtest_sh",
+        "//bashtest/tests:consumer_scripts",
+    ],
+)
+
+[
+    py_test(
+        name = name,
+        size = "medium",
+        srcs = [name + ".py"],
+        data = [":test_data"],
+        target_compatible_with = select({
+            "//bashtest:windows": ["@platforms//:incompatible"] if name in [
+                "junit_test",
+                "release_notes_test",
+                "release_site_test",
+                "version_test",
+            ] else [],
+            "//conditions:default": [],
+        }),
+        deps = [":tool_lib"],
+    )
+    for name in [
+        "ci_reports_test",
+        "infrastructure_test",
+        "junit_test",
+        "release_notes_test",
+        "release_site_test",
+        "site_artwork_test",
+        "site_storage_test",
+        "version_test",
+    ]
+]

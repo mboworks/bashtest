@@ -14,3 +14,18 @@
 # limitations under the License.
 
 package(default_visibility = ["//visibility:private"])
+
+filegroup(
+    name = "tool_test_data",
+    srcs = glob([
+        "*.md",
+        ".github/**",
+        ".pre-commit/**",
+        "docs/**",
+    ]) + [
+        ".bazelversion",
+        "MODULE.bazel",
+        "release-site.json",
+    ],
+    visibility = ["//tools:__pkg__"],
+)

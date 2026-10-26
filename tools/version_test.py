@@ -6,12 +6,13 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import tarfile
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).parents[1]
 
 
 class VersionTest(unittest.TestCase):
@@ -46,7 +47,7 @@ class VersionTest(unittest.TestCase):
             f'bazel_dep(name = "mboworks_bashtest", version = "{version}")\n')
 
     def prepare(self, version, check=False):
-        args = ['python3', str(ROOT / 'tools/prepare_release.py'), version]
+        args = [sys.executable, str(ROOT / 'tools/prepare_release.py'), version]
         if check:
             args.append('--check')
         return subprocess.run(args, cwd=self.root, capture_output=True, text=True)
@@ -128,7 +129,8 @@ class VersionTest(unittest.TestCase):
         self.set_readme('0.7.0')
         self.commit()
         command = ['bash', str(ROOT / '.github/workflows/release_prep.sh')]
-        environment = dict(os.environ, GITHUB_REF_NAME='0.7.1')
+        environment = dict(os.environ, GITHUB_REF_NAME='0.7.1',
+                           PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH'])
         result = subprocess.run(command, cwd=self.root, env=environment,
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)

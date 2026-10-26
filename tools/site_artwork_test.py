@@ -13,7 +13,7 @@ import site_artwork
 
 class SiteArtworkTest(unittest.TestCase):
     def test_publisher_decorates_only_the_complete_deployment_copy(self):
-        root = Path(__file__).resolve().parent.parent
+        root = Path(__file__).parent.parent
         for name in ("pages",):
             workflow = (root / f".github/workflows/{name}.yml").read_text()
             stage = workflow.index("rsync --archive --exclude='.git' site/ public/")
@@ -25,7 +25,7 @@ class SiteArtworkTest(unittest.TestCase):
     def test_nested_pages_and_idempotence(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            assets = Path(__file__).resolve().parent.parent / "docs/assets"
+            assets = Path(__file__).parent.parent / "docs/assets"
             documents = {
                 "index.html": '<!doctype html><html lang="en"><meta charset="utf-8"><body>Home</body></html>',
                 "site/tag/1.2.5/README.html": '<!doctype html><html><head><title>Help</title></head><body>Help</body></html>',

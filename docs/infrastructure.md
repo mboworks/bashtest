@@ -25,6 +25,64 @@ Use these measurements before introducing stricter budgets or custom eviction. A
 inventory is reported without replacing test failures. This inventory includes all refs and
 may briefly lag post-job cache uploads; verify later runs before claiming savings.
 
+### Test diagnostics
+
+Every test-matrix job retains a `test-results-OS` Actions artifact for seven days,
+including on failure. The workflow and consumer scripts execute ordinary Bazel
+commands with `--build_event_json_file`. Collection runs separately through the
+Bazel-built `//tools:ci_reports` tool, which copies the `test.log` and `test.xml`
+files named by that
+invocation's test-result events. Root runfiles modes, external consumers, shards,
+and retry attempts remain separate. Results are copied before another command can
+overwrite them and before consumer cleanup removes its temporary workspace. Stale
+results in `bazel-testlogs` are not collected. Missing local outputs and malformed
+build events are reported as collection errors; remote-only output URIs are not
+downloaded by this local-CI collector.
+
+An always-run step writes per-invocation JUnit counts and limited failure/error
+excerpts to the job summary. It first collects pending root results, including
+commands that failed before an explicit collection call. Consumer cleanup does the
+same before deleting its workspace and retains negative-analysis command logs.
+Build/test status comes from the build events' finished event;
+Bazel's ordinary exit status still determines the test step's outcome. For
+`bazel run`, build events describe the build, while the native CI step reports
+the program's exit status. Event files
+under an `expected/` directory identify intentional failure commands. Console
+output remains in the native Actions step logs. It counts actual cases rather than trusting aggregate
+XML attributes, labels intentionally failing fixture commands, and fails on
+unexpected command outcomes, collection errors, or malformed JUnit XML. The
+consumer scripts still verify each expected failure's precise behavior and print
+captured negative-test logs if those checks fail. A missing report is shown as
+such, leaving the original Bazel command status authoritative.
+
+Summary names and excerpts are HTML-escaped, diagnostics are placed in literal
+`pre` blocks, and only 20 bounded excerpts and 200 invocation rows are displayed.
+XML files above 8 MiB remain in the artifact but are not parsed for the summary;
+DTD/entity declarations are rejected. Complete reports and logs are retained.
+Summary generation uses Python's standard library and `GITHUB_STEP_SUMMARY`, with
+no PR comments, check-writing token, or privileged follow-up workflow. Python tests
+are `py_test` targets under `//tools/...` and run with `bazel test //...`; the
+collector and documentation verifier are `py_binary` targets. `rules_python` and
+its Python 3.13 toolchain are dev dependencies, so consumers acquire no Python
+runtime requirement. No separate Python installation or unittest CI job is needed.
+Tests that exercise Unix process/signal or Git/shell release behavior run on Linux
+and macOS. Portable Python suites also run in the stripped-PATH Windows job.
+
+To reproduce capture locally, use a fresh output directory for each invocation:
+
+```sh
+export BASHTEST_CI_REPORTS=/tmp/bashtest-reports
+mkdir -p "$BASHTEST_CI_REPORTS"
+bazel test //... --build_event_json_file="$BASHTEST_CI_REPORTS/root.json"
+bazel run //tools:ci_reports -- collect --events "$BASHTEST_CI_REPORTS/root.json" --output "$BASHTEST_CI_REPORTS/root"
+bash bashtest/tests/external_consumer_test.sh
+bazel run //tools:ci_reports -- finalize "$BASHTEST_CI_REPORTS" --destination "$BASHTEST_CI_REPORTS" --output /tmp/bashtest-summary.md
+```
+
+Without `BASHTEST_CI_REPORTS`, the standalone consumer scripts run Bazel directly.
+Artifact retention after forced runner termination is limited to files already
+written; ordinary Bazel test timeouts are collected and verified explicitly.
+
 ## Publishing
 
 The release publisher uses trusted main tooling and the tagged documentation snapshot.
@@ -59,8 +117,7 @@ The change follows [mbo PR #549](https://github.com/mboworks/mbo/pull/549).
 retains this repository's layout and API promises. Beautysh remains the shell formatter; no C++
 style guide or competing shell formatter is introduced.
 
-Run `bazel test //...`, `python3 -m unittest discover -s tools -p '*_test.py'`, and
-`pre-commit run --all-files`. CI also builds the configured release documentation to validate
+Run `bazel test //...` and `pre-commit run --all-files`. CI also builds the configured release documentation to validate
 links and mappings before publication.
 
 ## Version consistency
