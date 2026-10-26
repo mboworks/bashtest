@@ -13,15 +13,24 @@ class InfrastructureTest(unittest.TestCase):
         self.assertIn("cache-save: ${{ github.ref == 'refs/heads/main' }}", workflow)
         self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
         self.assertIn('repository-cache: true', workflow)
-        self.assertIn('disk-cache: ${{ github.workflow }}', workflow)
+        self.assertIn("disk-cache: ${{ github.workflow }}-${{ matrix.bazel || 'pinned' }}", workflow)
         self.assertIn('needs: [release-site-tests, pre-commit, test]', workflow)
         self.assertIn('os: [ubuntu-latest, macos-latest, windows-latest]', workflow)
+
+    def test_every_platform_tests_supported_bazel_versions(self):
+        workflow = (Path(__file__).parents[1] / '.github/workflows/main.yml').read_text()
+        self.assertIn('bazel: ["7.7.2", "8.8.2", ""]', workflow)
+        # Job-level selection must also reach external consumer workspaces and
+        # Windows commands, rather than being limited to a single root test step.
+        self.assertIn('    env:\n      USE_BAZEL_VERSION: ${{ matrix.bazel }}', workflow)
+        self.assertIn("name: test (${{ matrix.os }}, Bazel ${{ matrix.bazel || 'pinned' }})", workflow)
+        self.assertIn("name: test-results-${{ matrix.os }}-bazel-${{ matrix.bazel || 'pinned' }}", workflow)
 
     def test_test_diagnostics_survive_failed_steps(self):
         workflow = (Path(__file__).parents[1] / '.github/workflows/main.yml').read_text()
         self.assertIn('name: Summarize JUnit results\n      if: always()', workflow)
         self.assertIn('name: Retain test diagnostics\n      if: always()', workflow)
-        self.assertIn('name: test-results-${{ matrix.os }}', workflow)
+        self.assertIn("name: test-results-${{ matrix.os }}-bazel-${{ matrix.bazel || 'pinned' }}", workflow)
         self.assertIn('retention-days: 7', workflow)
         self.assertIn('bazel test //... --build_event_json_file=', workflow)
         self.assertIn('bazel test --enable_runfiles=no //... --build_event_json_file=', workflow)

@@ -11,6 +11,14 @@ Main and numeric release tags run push validation; branches run in pull-request 
 including forks, without duplicating the complete matrix on each push. Only superseded PR runs
 are cancelled. The final gate retains release-site tests, pre-commit, and every test-matrix cell.
 
+Every pull request and main/tag run tests Linux, macOS, and Windows with Bazel 7.7.2,
+8.8.2, and the version in `.bazelversion`. The empty version entry in the matrix
+lets Bazelisk read that file, avoiding a second copy of the default version.
+Job-level `USE_BAZEL_VERSION` applies to root tests, report tooling, and external
+consumer workspaces. Every cell runs both root runfiles modes and the consumer
+checks; Windows additionally verifies the managed runtime with Unix tools removed
+from PATH. Job names, disk caches, and artifacts distinguish each version.
+
 The pinned setup-bazel action retains native platform-specific cache paths, including Windows
 where supported. In the Test workflow, PRs and release tags restore caches; only main saves them.
 The separate upstream Release build disables cache mounting because it cannot restrict writes
@@ -27,7 +35,7 @@ may briefly lag post-job cache uploads; verify later runs before claiming saving
 
 ### Test diagnostics
 
-Every test-matrix job retains a `test-results-OS` Actions artifact for seven days,
+Every test-matrix job retains a `test-results-OS-bazel-VERSION` Actions artifact for seven days,
 including on failure. The workflow and consumer scripts execute ordinary Bazel
 commands with `--build_event_json_file`. Collection runs separately through the
 Bazel-built `//tools:ci_reports` tool, which copies the `test.log` and `test.xml`
@@ -39,8 +47,10 @@ results in `bazel-testlogs` are not collected. Missing local outputs and malform
 build events are reported as collection errors; remote-only output URIs are not
 downloaded by this local-CI collector.
 
-An always-run step writes per-invocation JUnit counts and limited failure/error
-excerpts to the job summary. It first collects pending root results, including
+An always-run step separates regular test counts, intentional failure checks, and
+builds in the job summary. Counts use the final attempt of each run/shard; earlier
+retries remain in the artifact. Intentional fixture diagnostics are collapsed and
+excluded from ordinary failure/error counts. It first collects pending root results, including
 commands that failed before an explicit collection call. Consumer cleanup does the
 same before deleting its workspace and retains negative-analysis command logs.
 Build/test status comes from the build events' finished event;
@@ -50,7 +60,8 @@ the program's exit status. Event files
 under an `expected/` directory identify intentional failure commands. Console
 output remains in the native Actions step logs. It counts actual cases rather than trusting aggregate
 XML attributes, labels intentionally failing fixture commands, and fails on
-unexpected command outcomes, collection errors, or malformed JUnit XML. The
+unexpected command outcomes, final-attempt Bazel/JUnit failures or errors,
+collection errors, or malformed JUnit XML. The
 consumer scripts still verify each expected failure's precise behavior and print
 captured negative-test logs if those checks fail. A missing report is shown as
 such, leaving the original Bazel command status authoritative.
