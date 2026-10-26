@@ -165,8 +165,10 @@ bashtest(
 
 The script can invoke `"${GENERATOR}" --output "${TEST_TMPDIR}/result"`.
 Tools must be executable Bazel targets; their runtime runfiles are included.
-This uses the test execution group, including `exec_group_compatible_with` on Bazel 8 and newer, so
-cross-compilation builds helpers for the platform running the test. `data`
+This uses the test execution group, so cross-compilation builds helpers for the
+platform running the test. Set `exec_group_compatible_with = {"test": [...]}` on
+Bazel 9 and newer; on Bazel 7 and 8, use `exec_compatible_with = [...]`, which also
+constrains the test group on those versions. `data`
 continues to use the target configuration. Do not put the same target in both
 `data` and `tools`. Multiple names may refer to the same tool.
 

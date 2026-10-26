@@ -93,11 +93,13 @@ bashtest(
     tags = ["manual"],
 )
 EOF
-# Bazel 7 predates per-group constraints; still verify execution-platform tools.
-if [[ "$(bazel --version)" == 'bazel 7.'* ]]; then
-    sed 's/exec_group_compatible_with = {"test": \[":test_role"\]}/exec_compatible_with = [":test_role"]/' BUILD.bazel > BUILD.tmp
-    mv BUILD.tmp BUILD.bazel
-fi
+# Before Bazel 9, default execution constraints also apply to the test group.
+case "$(bazel --version)" in
+    'bazel 7.'*|'bazel 8.'*)
+        sed 's/exec_group_compatible_with = {"test": \[":test_role"\]}/exec_compatible_with = [":test_role"]/' BUILD.bazel > BUILD.tmp
+        mv BUILD.tmp BUILD.bazel
+        ;;
+esac
 cat > consumer.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
