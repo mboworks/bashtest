@@ -17,7 +17,10 @@ lets Bazelisk read that file, avoiding a second copy of the default version.
 Job-level `USE_BAZEL_VERSION` applies to root tests, report tooling, and external
 consumer workspaces. Every cell runs both root runfiles modes and the consumer
 checks; Windows additionally verifies the managed runtime with Unix tools removed
-from PATH. Job names, disk caches, and artifacts distinguish each version.
+from PATH. Native Bazel 7 `sh_binary` fixtures need separate shell configuration:
+the Windows driver points those helper launchers at the downloaded Bash. The
+standalone bashtest runtime invocation still runs without a shell override or
+`BAZEL_SH`. Job names, disk caches, and artifacts distinguish each version.
 
 The pinned setup-bazel action retains native platform-specific cache paths, including Windows
 where supported. In the Test workflow, PRs and release tags restore caches; only main saves them.
