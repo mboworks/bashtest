@@ -78,11 +78,46 @@ class CiReportsTest(unittest.TestCase):
 </testsuite></testsuites>''')
         text, failed = ci_reports.summarize(self.root)
         self.assertFalse(failed)
-        self.assertIn('4 / 1 / 1 / 1', text)
-        self.assertIn('expected failure', text)
+        self.assertNotIn('<th>Failures</th>', text)
+        self.assertIn('Expected nonzero exit observed (3)', text)
+        self.assertIn('<details><summary>Expected fixture diagnostics', text)
+        self.assertNotIn('Test diagnostics (', text)
         self.assertNotIn('<script>', text)
         self.assertIn('&lt;/pre&gt;', text)
         self.assertIn('shard 2, attempt 3', text)
+
+    def test_successful_exit_cannot_mask_failed_xml_or_bazel_test_status(self):
+        result = {'label': '//:a', 'run': 1, 'shard': 1, 'attempt': 1,
+                  'status': 'PASSED', 'files': ['result_0001/test.xml']}
+        folder = self.manifest('tests', results=[result])
+        (folder / 'result_0001').mkdir()
+        report = folder / 'result_0001/test.xml'
+        for kind in ('failure', 'error'):
+            report.write_text(f'<testsuite><testcase name="bad"><{kind}/></testcase></testsuite>')
+            text, failed = ci_reports.summarize(self.root)
+            self.assertTrue(failed)
+            self.assertIn('<td>FAILED</td>', text)
+            self.assertIn('unexpected JUnit failures/errors', text)
+        report.write_text('<testsuite><testcase name="ok"/></testsuite>')
+        result['status'] = 'TIMEOUT'
+        self.manifest('tests', results=[result])
+        text, failed = ci_reports.summarize(self.root)
+        self.assertTrue(failed)
+        self.assertIn('Bazel test status TIMEOUT', text)
+
+    def test_successful_retry_uses_final_attempt_and_preserves_skips(self):
+        results = [{'label': '//:a', 'run': 1, 'shard': 1, 'attempt': attempt,
+                    'status': status, 'files': [f'result_000{attempt}/test.xml']}
+                   for attempt, status in ((1, 'FAILED'), (2, 'PASSED'))]
+        folder = self.manifest('retry', results=results)
+        for attempt, case in ((1, '<failure/>'), (2, '<skipped/>')):
+            target = folder / f'result_000{attempt}'
+            target.mkdir()
+            (target / 'test.xml').write_text(f'<testsuite><testcase>{case}</testcase></testsuite>')
+        text, failed = ci_reports.summarize(self.root)
+        self.assertFalse(failed)
+        self.assertIn('<td>Passed</td><td>1</td><td>0</td><td>0</td><td>1</td>', text)
+        self.assertNotIn('Test diagnostics (', text)
 
     def test_unexpected_command_and_collection_failures_fail_summary(self):
         self.manifest('unexpected-pass', expected='failure')

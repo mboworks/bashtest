@@ -117,51 +117,94 @@ def counts(path):
 
 
 def summarize(directory):
-    lines = ['## Bazel test results', '',
-             'Each row is one invocation. Shards and retry attempts are retained separately; '
-             'counts include every reported attempt. Expected failures are checked by the consumer scripts. '
-             'For bazel run, build events describe the build; the CI step reports the program exit.', '',
-             '<table><tr><th>Invocation</th><th>Build/test result</th><th>Tests / failures / errors / skipped</th></tr>']
-    details, problems = [], []
+    sections = {'Tests': [], 'Expected-failure checks': [], 'Builds': []}
+    details, expected_details, problems = [], [], []
     manifests = sorted(directory.glob('*/invocation.json'))
     for index, manifest in enumerate(manifests):
         invocation = json.loads(manifest.read_text(encoding='utf-8'))
-        expected = invocation['expected']
+        negative = invocation['expected'] == 'failure'
         code = invocation['exit_code']
-        matched = (code == 0) == (expected == 'success')
-        outcome = ('passed' if code == 0 else 'expected failure') if matched else ('UNEXPECTED PASS' if code == 0 else 'FAILED')
-        if invocation.get('command') == 'run':
-            outcome = 'build ' + outcome + '; program exit reported by CI'
+        matched = (code != 0) if negative else (code == 0)
+        invocation_problems = list(invocation['errors'])
         if not matched:
-            problems.append(f'{manifest.parent.name}: unexpected command exit {code}')
-        problems.extend(invocation['errors'])
+            invocation_problems.append(f'unexpected command exit {code}')
         totals = [0, 0, 0, 0]
         reports = 0
+        messages = []
+        # Earlier failed retries remain in the artifact; only the final attempt
+        # for each run/shard contributes to the displayed outcome and case counts.
+        attempts = {}
         for result in invocation['results']:
+            key = (result['label'], result['run'], result['shard'])
+            if key not in attempts or result['attempt'] > attempts[key]['attempt']:
+                attempts[key] = result
+        for result in attempts.values():
+            if not negative and result.get('status', 'PASSED') not in ('PASSED', 'FLAKY'):
+                invocation_problems.append(f"{result['label']}: Bazel test status {result['status']}")
             for name in result['files']:
                 if not name.endswith('/test.xml'):
                     continue
                 try:
-                    values, messages = counts(manifest.parent / name)
+                    values, excerpts = counts(manifest.parent / name)
                     if values is not None:
                         totals = [a + b for a, b in zip(totals, values)]
                         reports += 1
-                    for message in messages:
-                        if len(details) < 20:
-                            details.append(f"{manifest.parent.name} / {result['label'][:200]} "
-                                           f"(run {result['run']}, shard {result['shard']}, attempt {result['attempt']}): {message}")
+                        if not negative and (values[1] or values[2]):
+                            invocation_problems.append(f'{name}: unexpected JUnit failures/errors')
+                    for message in excerpts:
+                        if len(messages) < 20:
+                            messages.append(f"{manifest.parent.name} / {result['label'][:200]} "
+                                            f"(run {result['run']}, shard {result['shard']}, attempt {result['attempt']}): {message}")
                 except (OSError, ValueError, ET.ParseError) as error:
-                    problems.append(f'{manifest.parent.name}/{name}: invalid JUnit: {error}')
-        count_text = ' / '.join(map(str, totals)) if reports else 'No summarized XML'
+                    invocation_problems.append(f'{name}: invalid JUnit: {error}')
+        problems.extend(f'{manifest.parent.name}: {problem}' for problem in invocation_problems)
+        if negative and matched and not invocation_problems:
+            expected_details.extend(messages)
+        else:
+            details.extend(messages)
+        outcome = 'FAILED' if invocation_problems else 'Passed'
+        if negative:
+            section = 'Expected-failure checks'
+            outcome = 'FAILED' if invocation_problems else f'Expected nonzero exit observed ({code})'
+            cells = (manifest.parent.name[:200], outcome)
+        elif invocation.get('command') in ('run', 'build'):
+            section = 'Builds'
+            if invocation.get('command') == 'run':
+                outcome = 'build ' + outcome.lower() + '; program exit reported by CI'
+            cells = (manifest.parent.name[:200], outcome)
+        else:
+            section = 'Tests'
+            cells = (manifest.parent.name[:200], outcome, *map(str, totals)) if reports else (
+                manifest.parent.name[:200], outcome, 'Unavailable', '—', '—', '—')
         if index < 200:
-            lines.append('<tr>' + ''.join(f'<td>{html.escape(value)}</td>' for value in
-                                         (manifest.parent.name[:200], f'{outcome} (exit {code}, expected {expected})', count_text)) + '</tr>')
-    lines.extend(['</table>', '', f'{len(manifests)} invocations retained. Download the test-results artifact for full logs, XML, and build events.'])
+            sections[section].append('<tr>' + ''.join(f'<td>{html.escape(value)}</td>' for value in cells) + '</tr>')
+    lines = ['## Bazel test results', '',
+             'Unexpected results or reporting problems detected.' if problems else
+             'No unexpected results in the recorded build/test reports.', '',
+             'Case counts use the final attempt of each run/shard. All attempts remain in the artifact. '
+             'CI steps determine overall success, including consumer assertions and bazel run program exits.']
+    for section, rows in sections.items():
+        if not rows:
+            continue
+        lines.extend(['', f'### {section}', ''])
+        if section == 'Expected-failure checks':
+            lines.extend(['These fixtures deliberately fail to exercise failure XML, fail-fast, timeouts, '
+                          'and invalid tool declarations. Their failures/errors are expected fixture output, '
+                          'excluded from the test table. Consumer scripts check the precise behavior; '
+                          'the rows below report the observed command exit.', ''])
+        columns = ('Invocation', 'Outcome', 'Cases', 'Failures', 'Errors', 'Skipped') if section == 'Tests' else ('Invocation', 'Outcome')
+        lines.append('<table><tr>' + ''.join(f'<th>{column}</th>' for column in columns) + '</tr>')
+        lines.extend(rows)
+        lines.append('</table>')
+    lines.extend(['', f'{len(manifests)} invocations retained. Download the test-results artifact for full logs, XML, and build events.'])
     if details:
-        lines.extend(['', 'Failure/error diagnostics (limited to 20 excerpts):', '',
-                      '<pre>' + html.escape('\n\n'.join(details)) + '</pre>'])
+        lines.extend(['', 'Test diagnostics (limited to 20 excerpts):', '',
+                      '<pre>' + html.escape('\n\n'.join(details[:20])) + '</pre>'])
+    if expected_details:
+        lines.extend(['', '<details><summary>Expected fixture diagnostics (intentional failures; limited to 20 excerpts)</summary>', '',
+                      '<pre>' + html.escape('\n\n'.join(expected_details[:20])) + '</pre>', '', '</details>'])
     if problems:
-        lines.extend(['', 'Reporting/command problems:', '',
+        lines.extend(['', 'Unexpected test/command results or reporting problems:', '',
                       '<pre>' + html.escape('\n'.join(problems)[:8000]) + '</pre>'])
     if not manifests:
         lines.extend(['', 'No recorded invocations; a prerequisite may have failed.'])
