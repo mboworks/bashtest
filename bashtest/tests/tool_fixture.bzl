@@ -15,8 +15,6 @@
 
 """Test-only configuration fixtures; not part of bashtest's public API."""
 
-load("//bashtest:bashtest.bzl", "bashtest")
-
 visibility("private")
 
 def _path(ctx, file):
@@ -45,23 +43,3 @@ tool_source = rule(
     implementation = _tool_source_impl,
     attrs = {"data": attr.label(allow_single_file = True)},
 )
-
-def execution_properties_test(name):
-    """Verify execution properties belong only to the test, then run its launcher.
-
-    Args:
-        name: Name of the executable regression test.
-    """
-
-    # A neutral property exercises the test exec group in every runfiles mode.
-    properties = {"test.bashtest-regression": "1"}
-    bashtest(
-        name = name,
-        srcs = ["exec_properties_test.sh"],
-        exec_properties = properties,
-    )
-    if native.existing_rule(name).get("exec_properties") != properties:
-        fail("The outer test must retain its execution properties")
-    for suffix in ["__bashtest_launcher", "__bashtest_launcher_windows"]:
-        if native.existing_rule(name + suffix).get("exec_properties"):
-            fail("Binary launchers must not inherit test execution properties")

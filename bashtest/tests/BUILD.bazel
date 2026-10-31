@@ -16,7 +16,8 @@
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bashtest:bashtest.bzl", "bashtest")
-load(":tool_fixture.bzl", "configuration_data", "execution_properties_test", "tool_source")
+load(":exec_properties_fixture.bzl", "execution_properties_test")
+load(":tool_fixture.bzl", "configuration_data", "tool_source")
 
 package(default_visibility = ["//visibility:private"])
 
