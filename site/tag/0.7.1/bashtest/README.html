@@ -1,0 +1,221 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>bashtest/README.md - bashtest 0.7.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.1/">Home</a><a href="/bashtest/site/tag/0.7.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/8d336438138760ed68b6a142557c51a2d992500f">Source</a></nav><p>bashtest 0.7.1</p><main><h1 dir="auto" id="mboworks_bashtestbashtest">mboworks_bashtest//bashtest</h1>
+<p dir="auto">Bashtest provides <code class="notranslate">sh_test</code> wrapper that simplifies the creation of shell tests.</p>
+<ul dir="auto">
+<li>bashtest:bashtest, bashtest/bashtest.sh</li>
+<li>sh_library <code class="notranslate">bashtest_sh</code> which provides a test runner for complex shell tests involving golden files that provides built-in golden update functionality (see <code class="notranslate">bazel run //bashtest:bashtest_help</code>).
+<ul dir="auto">
+<li>status helper <code class="notranslate">test_has_error</code>: Returns whether a test function has had an expectation error. This is reset for every test function.</li>
+<li>status helper <code class="notranslate">test_has_failed_tests</code>: Returns whether a test program had previous failing test functions.</li>
+<li>scratch helper <code class="notranslate">test_tmpdir [name]</code>: Creates and prints a unique directory below <code class="notranslate">${BASHTEST_TMPDIR}</code>.</li>
+<li>expectation <code class="notranslate">expect_eq</code> "${LHS}" "${RHS}": Asserts that two strings are the same.</li>
+<li>expectation <code class="notranslate">expect_ne</code> "${LHS}" "${RHS}": Asserts that two strings are different.</li>
+<li>expectation <code class="notranslate">expect_files_eq</code> "${LHS}" "${RHS}": Asserts that two files are the same (supports golden updates).</li>
+<li>expectation <code class="notranslate">expect_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is present in an array.</li>
+<li>expectation <code class="notranslate">expect_not_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is not present in an array.</li>
+<li>expectation <code class="notranslate">expect_output_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text contains a literal substring.</li>
+<li>expectation <code class="notranslate">expect_output_not_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text does not contain a literal substring.</li>
+<li>expectation <code class="notranslate">expect_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches an extended regular expression (bash built-in; <code class="notranslate">^</code>/<code class="notranslate">$</code> anchor the whole text).</li>
+<li>expectation <code class="notranslate">expect_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match an extended regular expression.</li>
+<li>expectation <code class="notranslate">expect_pcre_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches a Perl Compatible Regular Expression (requires an external PCRE tool).</li>
+<li>expectation <code class="notranslate">expect_pcre_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match a Perl Compatible Regular Expression.</li>
+<li>control <code class="notranslate">skip_test</code> "${REASON}": Marks the current test as skipped and reports the reason. Use <code class="notranslate">skip_test "reason" &amp;&amp; return</code> to end the test body.</li>
+<li>special test function <code class="notranslate">test::test_init</code>: If present, then this function runs first! Tests will only be executed if it succeeds.</li>
+<li>special test function <code class="notranslate">test::test_done</code>: If present, then this function runs last!</li>
+</ul>
+</li>
+</ul>
+<p dir="auto">The macro supports directory and manifest-only runfiles on Linux, macOS, and<br>
+Windows x86-64 with an automatically provisioned MSYS2 runtime. See the root <a href="../index.html#installation-and-requirements">installation requirements</a><br>
+for Windows setup and resolving data dependencies with <code class="notranslate">rlocation</code>.</p>
+<h2 dir="auto" id="failure-diagnostics">Failure diagnostics</h2>
+<p dir="auto">Failed expectations print <code class="notranslate">source-file:line: test failure</code> on stderr before their<br>
+value or command diagnostics. The location is the first assertion call outside<br>
+the framework; if an assertion is inside a user-defined helper, it points into<br>
+that helper. Locations remain available for assertions in subshells and command<br>
+substitutions, and are included in JUnit failure text and captured stderr.</p>
+<p dir="auto"><code class="notranslate">expect_files_eq</code> prints its unified diff on stderr whenever files differ, without<br>
+requiring <code class="notranslate">--verbose</code>. The complete diff is also saved as <code class="notranslate">&lt;result-file&gt;.diff</code>.<br>
+JUnit reports include the diff, so CI does not need access to a sandbox path to<br>
+show what changed. Successful comparisons and successful golden updates do not<br>
+print a failure location or diff. Verbose mode does not duplicate failure diffs.</p>
+<p dir="auto">Strict mode's unhandled-command errors continue to identify the failed command<br>
+and exit status. They do not claim a source line: Bash 3.2's <code class="notranslate">ERR</code> trap metadata<br>
+can point at the function declaration rather than the failing command.</p>
+<h2 dir="auto" id="scratch-retention">Scratch retention</h2>
+<p dir="auto"><code class="notranslate">--keep-tmpdir=failure</code> is the default. It preserves the runner-owned<br>
+<code class="notranslate">${BASHTEST_TMPDIR}</code> after a nonzero process exit, a failed case or lifecycle hook,<br>
+an aborted run, invalid runner settings, or a report-writing error. Handling a<br>
+nonzero <code class="notranslate">test_runner</code> return does not erase that failure for retention purposes.<br>
+Failed expectations outside the runner also retain their scratch data, including<br>
+failures recorded by waited descendant shells. Successful runs remove it.</p>
+<p dir="auto"><code class="notranslate">--keep-tmpdir=never</code> removes owned scratch data even on failure;<br>
+<code class="notranslate">--keep-tmpdir=always</code> preserves it even on success. Cleanup preserves the original<br>
+nonzero process exit status, including signal-derived statuses. If creating the<br>
+scratch directory fails, cleanup leaves the caller's <code class="notranslate">${TEST_TMPDIR}</code> alone.<br>
+Only the runner-created directory is removed, and retained paths are printed to<br>
+stderr. Bazel may still delete its sandbox; use local execution or<br>
+<code class="notranslate">--sandbox_debug</code> when investigating retained artifacts.</p>
+<h2 dir="auto" id="command-failure-handling">Command failure handling</h2>
+<p dir="auto"><code class="notranslate">expect_success command args...</code> checks for exit status 0.<br>
+<code class="notranslate">expect_exit_code status command args...</code> checks for the specified status in<br>
+0..255. Arguments are passed directly without string evaluation; stdout and<br>
+stderr are preserved, and shell functions run in the same shell:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate"><span class="pl-en">test::generator</span>() {
+    expect_success <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${GENERATOR}</span><span class="pl-pds">"</span></span> --output <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${TEST_TMPDIR}</span>/result with spaces<span class="pl-pds">"</span></span>
+    expect_exit_code 2 <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${GENERATOR}</span><span class="pl-pds">"</span></span> --invalid-option
+}</pre></div>
+<p dir="auto">A failed expectation remains a failure even if its return status is handled or<br>
+followed by a successful command. This includes expectations in command<br>
+substitutions, <code class="notranslate">(subshells)</code>, and background jobs that the test waits for.<br>
+<code class="notranslate">test_has_error</code> sees these failures in the parent shell. Tests must wait for<br>
+background assertion work before returning; long-lived services may instead<br>
+be stopped in teardown. Each test and lifecycle hook starts with a<br>
+fresh error state; failures do not leak into subsequent cases.</p>
+<p dir="auto">By default, ordinary commands follow Bash's final-return-status semantics.<br>
+Calling a test function to collect its return code suppresses <code class="notranslate">set -e</code> within<br>
+that function, so <code class="notranslate">false; echo done</code> alone does not fail a case. Use command<br>
+expectations, or opt into strict checking:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">bazel <span class="pl-c1">test</span> //path:my_test --test_arg=--strict-commands</pre></div>
+<p dir="auto"><code class="notranslate">--strict-commands</code> (also <code class="notranslate">--strict_commands</code>) records unhandled nonzero command<br>
+and pipeline statuses through Bash's <code class="notranslate">ERR</code> trap, even if a later command succeeds.<br>
+It covers setup, test bodies, teardown, and inherited subshells. Expected failures<br>
+handled by <code class="notranslate">if</code>, <code class="notranslate">!</code>, <code class="notranslate">&amp;&amp;</code>, or <code class="notranslate">||</code> retain ordinary Bash semantics. Command-exit<br>
+expectations deliberately check the command's final status, including expected<br>
+nonzero statuses. Strict checking collects failures rather than stopping at the<br>
+first one, and shared setup/test state is preserved.</p>
+<p dir="auto">Strict mode requires <code class="notranslate">test_runner</code> as a standalone statement, outside conditional<br>
+or other contexts that suppress Bash error traps. Unsupported invocation produces<br>
+an explicit runner error before tests execute. The runner temporarily owns the<br>
+<code class="notranslate">ERR</code> trap and <code class="notranslate">errexit</code>/<code class="notranslate">errtrace</code> options during each function and restores the<br>
+caller's settings afterward; do not replace that trap inside a strict test.<br>
+Default mode preserves existing conditional runner calls and caller error options.</p>
+<h2 dir="auto" id="filtering-sharding-and-fail-fast">Filtering, sharding, and fail-fast</h2>
+<p dir="auto">Bazel's native filter selects bare case names without the <code class="notranslate">test::</code> prefix:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">bazel <span class="pl-c1">test</span> //path:my_test --test_filter=<span class="pl-s"><span class="pl-pds">'</span>^(reads|writes)_<span class="pl-pds">'</span></span></pre></div>
+<p dir="auto">Bazel supplies this as <code class="notranslate">TESTBRIDGE_TEST_ONLY</code>. Bashtest interprets it as a Bash<br>
+extended regular expression, with substring matching unless anchored. An explicit<br>
+runner filter (<code class="notranslate">--test_arg=--test_filter=...</code>, <code class="notranslate">-f</code>, or <code class="notranslate">--gtest_filter</code>) replaces<br>
+that environment default, including an explicitly empty filter. If both explicit<br>
+regex and glob filters are provided, their union is selected, preserving the<br>
+existing behavior. Invalid regular expressions fail before lifecycle hooks run.<br>
+A filter selecting no cases retains exit status 2.</p>
+<p dir="auto"><code class="notranslate">--gtest_filter</code> is a legacy name for one <strong>Bash glob</strong>. It does not implement<br>
+GoogleTest's colon-separated lists or negative-filter grammar, and <code class="notranslate">GTEST_FILTER</code><br>
+is not read. Use a regex such as <code class="notranslate">^(alpha|beta)$</code> for multiple names.</p>
+<p dir="auto">The macro's <code class="notranslate">shard_count</code> attribute and Bazel's <code class="notranslate">--test_sharding_strategy</code> work<br>
+with <code class="notranslate">test_runner</code>, including a plain <code class="notranslate">sh_test</code> sourcing the framework. Cases are<br>
+sorted by name in the C locale, excluding lifecycle hooks, then assigned round<br>
+robin using <code class="notranslate">TEST_TOTAL_SHARDS</code> and zero-based <code class="notranslate">TEST_SHARD_INDEX</code>. Filtering is<br>
+applied within that stable assignment; each case appears in only its owner's<br>
+console/XML report. Each shard acknowledges <code class="notranslate">TEST_SHARD_STATUS_FILE</code>.</p>
+<p dir="auto">A shard with no selected cases passes if at least one case matched across the<br>
+whole suite; its hooks do not run. A completely empty shard writes a valid report<br>
+with zero cases. A shard owning only filtered-out cases reports those as skipped.<br>
+Nonempty shards run their own setup and teardown. Tests that depend on another<br>
+case's shell state must stay in one shard. Shard variables must be supplied<br>
+together as canonical decimal integers of at most nine digits, with a positive<br>
+count and an index below the count. Invalid settings or a failed shard-status<br>
+write fail before hooks execute.</p>
+<p dir="auto"><code class="notranslate">bazel test --test_runner_fail_fast</code> sets <code class="notranslate">TESTBRIDGE_TEST_RUNNER_FAIL_FAST=1</code>.<br>
+After the first failed case, bashtest marks remaining selected cases in that<br>
+shard as skipped and still runs <code class="notranslate">test_done</code>. Runtime skips alone do not trigger<br>
+fail-fast, unless <code class="notranslate">--no-skip</code> turns them into failures. Other shards and targets<br>
+are independent; Bazel's <code class="notranslate">--notest_keep_going</code> controls stopping between targets.</p>
+<h2 dir="auto" id="executable-tools">Executable tools</h2>
+<p dir="auto">Use <code class="notranslate">tools</code> to build helper executables for the test execution platform and export<br>
+resolved paths automatically:</p>
+<div class="highlight highlight-source-python" dir="auto"><pre class="notranslate"><span class="pl-en">bashtest</span>(
+    <span class="pl-s1">name</span> <span class="pl-c1">=</span> <span class="pl-s">"generator_test"</span>,
+    <span class="pl-s1">srcs</span> <span class="pl-c1">=</span> [<span class="pl-s">"generator_test.sh"</span>],
+    <span class="pl-s1">tools</span> <span class="pl-c1">=</span> {<span class="pl-s">"GENERATOR"</span>: <span class="pl-s">"//tools:generator"</span>},
+)</pre></div>
+<p dir="auto">The script can invoke <code class="notranslate">"${GENERATOR}" --output "${TEST_TMPDIR}/result"</code>.<br>
+Tools must be executable Bazel targets; their runtime runfiles are included.<br>
+This uses the test execution group, so cross-compilation builds helpers for the<br>
+platform running the test. Set <code class="notranslate">exec_group_compatible_with = {"test": [...]}</code> on<br>
+Bazel 9 and newer; on Bazel 7 and 8, use <code class="notranslate">exec_compatible_with = [...]</code>, which also<br>
+constrains the test group on those versions. <code class="notranslate">data</code><br>
+continues to use the target configuration. Do not put the same target in both<br>
+<code class="notranslate">data</code> and <code class="notranslate">tools</code>. Multiple names may refer to the same tool.</p>
+<p dir="auto">Keys must be shell environment variable names and must not conflict with <code class="notranslate">env</code><br>
+or <code class="notranslate">env_inherit</code>. Names beginning with <code class="notranslate">_BASHTEST</code>, <code class="notranslate">TEST_</code>, <code class="notranslate">RUNFILES_</code>, or <code class="notranslate">BASH</code>,<br>
+and <code class="notranslate">mboworks_bashtest</code>, <code class="notranslate">PATH</code>, <code class="notranslate">IFS</code>, <code class="notranslate">SHELLOPTS</code>, <code class="notranslate">ENV</code>, <code class="notranslate">EUID</code>, <code class="notranslate">UID</code>, and<br>
+<code class="notranslate">PPID</code> are reserved. Quote exported paths when invoking tools, including on<br>
+Windows. No <code class="notranslate">$(location ...)</code> expansion is needed for tool paths.</p>
+<h2 dir="auto" id="junit-xml-for-ci">JUnit XML for CI</h2>
+<p dir="auto">When run with <code class="notranslate">bazel test</code>, <code class="notranslate">test_runner</code> writes a JUnit-style XML report to<br>
+Bazel's <code class="notranslate">XML_OUTPUT_FILE</code>. Bazel collects it as<br>
+<code class="notranslate">bazel-testlogs/&lt;package&gt;/&lt;target&gt;/test.xml</code>. Each <code class="notranslate">test::name</code> becomes a separate<br>
+<code class="notranslate">testcase</code>; reports include durations in whole seconds, assertion diagnostics,<br>
+return-code failures, skipped cases and their reasons, and captured function<br>
+output. XML text is escaped, and invalid UTF-8 or XML 1.0 bytes become <code class="notranslate">?</code>.</p>
+<p dir="auto">This also works with a plain <code class="notranslate">rules_shell</code> <code class="notranslate">sh_test</code> that sources <code class="notranslate">bashtest.sh</code><br>
+and calls <code class="notranslate">test_runner</code>: reporting uses Bazel's standard test environment and<br>
+requires no extra rule attribute. The bashtest macro supplies the framework and<br>
+its managed Windows runtime as usual; a plain <code class="notranslate">sh_test</code> retains its own shell<br>
+and runfiles configuration.</p>
+<p dir="auto">Outside <code class="notranslate">bazel test</code>, enable a report with either of:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate">GTEST_OUTPUT=xml:results.xml ./my_test.sh
+bazel run //path:my_test -- --gtest_output=xml:results.xml</pre></div>
+<p dir="auto">Selection follows GoogleTest's precedence: <code class="notranslate">--gtest_output</code> (or<br>
+<code class="notranslate">--gtest-output</code>) overrides <code class="notranslate">GTEST_OUTPUT</code>, which overrides <code class="notranslate">XML_OUTPUT_FILE</code>.<br>
+<code class="notranslate">xml</code> and <code class="notranslate">xml:</code> default to <code class="notranslate">test_detail.xml</code> in the initial working directory.<br>
+A directory path ending in <code class="notranslate">/</code> selects <code class="notranslate">&lt;script-name&gt;.xml</code>, adding <code class="notranslate">_1</code>, <code class="notranslate">_2</code>,<br>
+and so on if a report already exists. Parent directories are created. An explicit<br>
+file path replaces that file. With <code class="notranslate">bazel run</code>, use an absolute output path to<br>
+keep the location independent of Bazel's working directory. An empty<br>
+<code class="notranslate">GTEST_OUTPUT</code> or <code class="notranslate">--gtest_output=</code> disables reporting. JSON output is unsupported;<br>
+an unsupported format or failure to write a report makes the test fail.</p>
+<p dir="auto">With reporting enabled, function output streams to its original stdout/stderr<br>
+while a copy is captured for the report. Standard <code class="notranslate">head</code>, <code class="notranslate">tail</code>, <code class="notranslate">tee</code>, and <code class="notranslate">wc</code> tools<br>
+must be available on <code class="notranslate">PATH</code>; they are included in the managed Windows runtime.<br>
+macOS also uses its system <code class="notranslate">ps</code> to detect an exited, unreaped coordinator.<br>
+Functions still run in the same shell, and setup/teardown state remains visible<br>
+to the tests. Capture workers do not<br>
+join a test's <code class="notranslate">wait</code> or <code class="notranslate">wait -n</code>. Background services may keep writing across<br>
+setup, cases, and teardown; captured output is attributed to the function active<br>
+when it was written. Output between functions is still streamed. Tests should<br>
+wait for background assertions before returning and stop services in teardown.<br>
+A capture failure makes the test fail as a reporting error rather than silently<br>
+losing output. Failed <code class="notranslate">test_init</code> and <code class="notranslate">test_done</code> hooks appear as additional error<br>
+cases; successful hooks do not count as test cases. Filters<br>
+produce skipped cases, and <code class="notranslate">--no-skip</code> turns runtime skip requests into failures.<br>
+An assertion failure or nonzero function return always takes precedence over a<br>
+skip request, even if the skip happens after the failure. Invalid extended<br>
+regular expressions fail both <code class="notranslate">expect_matches</code> and <code class="notranslate">expect_not_matches</code> with a<br>
+syntax-error diagnostic.<br>
+The existing exit code 2 for no passing or failing cases is retained and recorded<br>
+as a <code class="notranslate">test_runner</code> error. An early exit or a catchable signal during a function<br>
+records that function as an error and retains a nonzero exit status; <code class="notranslate">exit 0</code><br>
+inside a function is also an error because it aborts the runner.</p>
+<p dir="auto">Before each setup, test, or teardown function, the runner atomically writes a<br>
+provisional report containing completed cases and an error for the function<br>
+about to run. Its message explicitly labels the report provisional. A completed<br>
+run replaces that checkpoint with final results. Termination without cleanup,<br>
+such as SIGKILL, leaves the last written checkpoint identifying the function<br>
+whose completion was not yet recorded. Readers detect coordinator death, drain<br>
+a finite snapshot, and exit even without a stop request. Output already streamed<br>
+remains in Bazel's test log; use<br>
+<code class="notranslate">--test_output=streamed</code> to see output while Bazel runs. Catchable signals finalize<br>
+the report with available output. A failed progress-report write prevents a new<br>
+setup/test body from running and fails the target. Teardown still runs so a<br>
+reporting failure cannot prevent cleanup. Reporting begins at <code class="notranslate">test_runner</code>;<br>
+if termination happens before any report exists, Bazel supplies its fallback.</p>
+<p dir="auto">Nested runner/verifier scripts should select their own output file, or disable<br>
+reporting with <code class="notranslate">GTEST_OUTPUT=</code>, so an expected failure does not become the parent<br>
+target's report.<br>
+Verifier fixtures should also choose their own selection environment: clear<br>
+<code class="notranslate">TESTBRIDGE_TEST_ONLY</code>, set <code class="notranslate">TESTBRIDGE_TEST_RUNNER_FAIL_FAST=0</code>, and use<br>
+<code class="notranslate">TEST_TOTAL_SHARDS=1 TEST_SHARD_INDEX=0 TEST_SHARD_STATUS_FILE=</code> for an unsharded<br>
+child. This prevents the parent's filter, shard assignment, or acknowledgement<br>
+file from changing the fixture being verified.</p></main><footer>Release snapshot · 8d336438138760ed68b6a142557c51a2d992500f</footer></body></html>

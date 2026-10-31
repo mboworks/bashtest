@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>bashtest/runtime/README.md - bashtest 0.7.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.1/">Home</a><a href="/bashtest/site/tag/0.7.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/8d336438138760ed68b6a142557c51a2d992500f">Source</a></nav><p>bashtest 0.7.1</p><main><h1 dir="auto" id="managed-windows-runtime">Managed Windows runtime</h1>
+<p dir="auto">Bashtest's Windows x86-64 launcher resolves a pinned MSYS2 Bash executable through<br>
+Bazel runfiles. The shell entry point prepends Bash's directory to the process PATH,<br>
+so both framework utilities and child processes find the bundled programs.<br>
+All executables and DLLs in <code class="notranslate">usr/bin</code> are declared runtime inputs, including for<br>
+manifest-only execution. Linux and macOS keep using the installed shell tools.</p>
+<p dir="auto">When passing paths from another MSYS2 or Git Bash installation, use Windows absolute<br>
+paths, for example <code class="notranslate">--update-golden="$(cygpath -am "${PWD}")"</code>. Installation-relative<br>
+paths such as <code class="notranslate">/tmp</code> can refer to different directories in the managed runtime.</p>
+<p dir="auto">The repository rule downloads the official MSYS2 base archive dated 2026-09-27<br>
+and diffutils 3.12-1, verifying their SHA-256 hashes. The base includes Bash,<br>
+coreutils, grep with PCRE, sed, and runtime libraries; diffutils is an additional<br>
+package. No package manager is run, and no system installation is modified.<br>
+The toolchain declaration is local; its runtime is needed only for Windows. Expect roughly<br>
+42 MB of compressed downloads plus extracted files and the Bazel cache.</p>
+<p dir="auto">Sources and package metadata:</p>
+<ul dir="auto">
+<li><a href="https://repo.msys2.org/distrib/x86_64/" rel="nofollow">MSYS2 distribution archives</a></li>
+<li><a href="https://repo.msys2.org/msys/x86_64/" rel="nofollow">MSYS2 package archives</a></li>
+<li><a href="https://github.com/msys2/MSYS2-packages">MSYS2 package sources</a></li>
+</ul>
+<p dir="auto">Upstream binaries retain their own licenses, including GPL licenses; bashtest's<br>
+Apache-2.0 license does not relicense them. The downloaded archive keeps upstream<br>
+license and package metadata, and license files are included in runtime inputs.<br>
+Update the archive URLs and hashes together, then run the clean-environment<br>
+Windows CI test, including the PCRE and golden-file checks.</p>
+<p dir="auto">The launcher uses Bazel's native Windows launcher and launcher-maker targets,<br>
+matching rules_shell's approach. A registered Windows shell toolchain also points<br>
+to the downloaded Bash: Bazel's implicit coverage-helper dependency requires a<br>
+shell toolchain even for ordinary tests. This default can also supply rules_shell<br>
+binaries and tests on the local Windows machine. A root module can register its<br>
+own higher-priority shell toolchain. Native Bazel 7 shell rules and <code class="notranslate">genrule</code><br>
+actions retain their separate shell configuration requirements. Native Windows ARM64 is not<br>
+provided. Remote Windows execution has not been validated; declaring the runtime<br>
+inputs alone is not a claim of remote-execution support. MSYS2 runtime relocation,<br>
+worker filesystem policies, and launcher availability also need validation.</p></main><footer>Release snapshot · 8d336438138760ed68b6a142557c51a2d992500f</footer></body></html>

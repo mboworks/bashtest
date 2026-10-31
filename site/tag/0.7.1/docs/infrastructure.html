@@ -1,0 +1,142 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/infrastructure.md - bashtest 0.7.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.1/">Home</a><a href="/bashtest/site/tag/0.7.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/8d336438138760ed68b6a142557c51a2d992500f">Source</a></nav><p>bashtest 0.7.1</p><main><h1 dir="auto" id="infrastructure-and-publishing">Infrastructure and publishing</h1>
+<p dir="auto">Adapted from <a href="https://github.com/mboworks/proto/pull/100" data-hovercard-type="pull_request" data-hovercard-url="/mboworks/proto/pull/100/hovercard">proto PR 100</a> and xff PRs 835–848,<br>
+excluding 841. This repository keeps its Starlark/shell test pipeline and native setup-bazel<br>
+cache support. C++ clang-tidy orchestration, sanitizer caches, and coverage history ordering do<br>
+not apply to its current jobs.</p>
+<h2 dir="auto" id="ci-and-caching">CI and caching</h2>
+<p dir="auto">Main and numeric release tags run push validation; branches run in pull-request context,<br>
+including forks, without duplicating the complete matrix on each push. Only superseded PR runs<br>
+are cancelled. The final gate retains release-site tests, pre-commit, and every test-matrix cell.</p>
+<p dir="auto">Every pull request and main/tag run tests Linux, macOS, and Windows with Bazel 7.7.2,<br>
+8.8.2, and the version in <code class="notranslate">.bazelversion</code>. The empty version entry in the matrix<br>
+lets Bazelisk read that file, avoiding a second copy of the default version.<br>
+Job-level <code class="notranslate">USE_BAZEL_VERSION</code> applies to root tests, report tooling, and external<br>
+consumer workspaces. Every cell runs both root runfiles modes and the consumer<br>
+checks; Windows additionally verifies the managed runtime with Unix tools removed<br>
+from PATH. Native Bazel 7 <code class="notranslate">sh_binary</code> fixtures need separate shell configuration:<br>
+the Windows driver points those helper launchers at the downloaded Bash. The<br>
+standalone bashtest runtime invocation still runs without a shell override or<br>
+<code class="notranslate">BAZEL_SH</code>. Job names, disk caches, and artifacts distinguish each version.</p>
+<p dir="auto">The pinned setup-bazel action retains native platform-specific cache paths, including Windows<br>
+where supported. In the Test workflow, PRs and release tags restore caches; only main saves them.<br>
+The separate upstream Release build disables cache mounting because it cannot restrict writes<br>
+to main. Bazelisk and<br>
+repository downloads remain cached because these small projects do not download the C++ LLVM<br>
+payload that motivated compiled-output-only caching in proto and xff. The action's existing<br>
+OS/architecture and build/dependency-hash keys remain intact. Exact cache hits are immutable;<br>
+source-only edits need not refresh these small build-configuration caches.</p>
+<p dir="auto">The final main job reports compressed repository cache usage and the ten largest entries.<br>
+Use these measurements before introducing stricter budgets or custom eviction. A missing<br>
+inventory is reported without replacing test failures. This inventory includes all refs and<br>
+may briefly lag post-job cache uploads; verify later runs before claiming savings.</p>
+<h3 dir="auto" id="test-diagnostics">Test diagnostics</h3>
+<p dir="auto">Every test-matrix job retains a <code class="notranslate">test-results-OS-bazel-VERSION</code> Actions artifact for seven days,<br>
+including on failure. The workflow and consumer scripts execute ordinary Bazel<br>
+commands with <code class="notranslate">--build_event_json_file</code>. Collection runs separately through the<br>
+Bazel-built <code class="notranslate">//tools:ci_reports</code> tool, which copies the <code class="notranslate">test.log</code> and <code class="notranslate">test.xml</code><br>
+files named by that<br>
+invocation's test-result events. Root runfiles modes, external consumers, shards,<br>
+and retry attempts remain separate. Results are copied before another command can<br>
+overwrite them and before consumer cleanup removes its temporary workspace. Stale<br>
+results in <code class="notranslate">bazel-testlogs</code> are not collected. Missing local outputs and malformed<br>
+build events are reported as collection errors; remote-only output URIs are not<br>
+downloaded by this local-CI collector.</p>
+<p dir="auto">An always-run step separates regular test counts, intentional failure checks, and<br>
+builds in the job summary. Counts use the final attempt of each run/shard; earlier<br>
+retries remain in the artifact. Intentional fixture diagnostics are collapsed and<br>
+excluded from ordinary failure/error counts. It first collects pending root results, including<br>
+commands that failed before an explicit collection call. Consumer cleanup does the<br>
+same before deleting its workspace and retains negative-analysis command logs.<br>
+Build/test status comes from the build events' finished event;<br>
+Bazel's ordinary exit status still determines the test step's outcome. For<br>
+<code class="notranslate">bazel run</code>, build events describe the build, while the native CI step reports<br>
+the program's exit status. Event files<br>
+under an <code class="notranslate">expected/</code> directory identify intentional failure commands. Console<br>
+output remains in the native Actions step logs. It counts actual cases rather than trusting aggregate<br>
+XML attributes, labels intentionally failing fixture commands, and fails on<br>
+unexpected command outcomes, final-attempt Bazel/JUnit failures or errors,<br>
+collection errors, or malformed JUnit XML. The<br>
+consumer scripts still verify each expected failure's precise behavior and print<br>
+captured negative-test logs if those checks fail. A missing report is shown as<br>
+such, leaving the original Bazel command status authoritative.</p>
+<p dir="auto">Summary names and excerpts are HTML-escaped, diagnostics are placed in literal<br>
+<code class="notranslate">pre</code> blocks, and only 20 bounded excerpts and 200 invocation rows are displayed.<br>
+XML files above 8 MiB remain in the artifact but are not parsed for the summary;<br>
+DTD/entity declarations are rejected. Complete reports and logs are retained.<br>
+Summary generation uses Python's standard library and <code class="notranslate">GITHUB_STEP_SUMMARY</code>, with<br>
+no PR comments, check-writing token, or privileged follow-up workflow. Python tests<br>
+are <code class="notranslate">py_test</code> targets under <code class="notranslate">//tools/...</code> and run with <code class="notranslate">bazel test //...</code>; the<br>
+collector and documentation verifier are <code class="notranslate">py_binary</code> targets. <code class="notranslate">rules_python</code> and<br>
+its Python 3.13 toolchain are dev dependencies, so consumers acquire no Python<br>
+runtime requirement. No separate Python installation or unittest CI job is needed.<br>
+Tests that exercise Unix process/signal or Git/shell release behavior run on Linux<br>
+and macOS. Portable Python suites also run in the stripped-PATH Windows job.</p>
+<p dir="auto">To reproduce capture locally, use a fresh output directory for each invocation:</p>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate"><span class="pl-k">export</span> BASHTEST_CI_REPORTS=/tmp/bashtest-reports
+mkdir -p <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">$BASHTEST_CI_REPORTS</span><span class="pl-pds">"</span></span>
+bazel <span class="pl-c1">test</span> //... --build_event_json_file=<span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">$BASHTEST_CI_REPORTS</span>/root.json<span class="pl-pds">"</span></span>
+bazel run //tools:ci_reports -- collect --events <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">$BASHTEST_CI_REPORTS</span>/root.json<span class="pl-pds">"</span></span> --output <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">$BASHTEST_CI_REPORTS</span>/root<span class="pl-pds">"</span></span>
+bash bashtest/tests/external_consumer_test.sh
+bazel run //tools:ci_reports -- finalize <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">$BASHTEST_CI_REPORTS</span><span class="pl-pds">"</span></span> --destination <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">$BASHTEST_CI_REPORTS</span><span class="pl-pds">"</span></span> --output /tmp/bashtest-summary.md</pre></div>
+<p dir="auto">Without <code class="notranslate">BASHTEST_CI_REPORTS</code>, the standalone consumer scripts run Bazel directly.<br>
+Artifact retention after forced runner termination is limited to files already<br>
+written; ordinary Bazel test timeouts are collected and verified explicitly.</p>
+<h2 dir="auto" id="publishing">Publishing</h2>
+<p dir="auto">The release publisher uses trusted main tooling and the tagged documentation snapshot.<br>
+The shared 64-pixel README logo and favicons match MBO Works' other repositories.<br>
+Favicons are inserted after staging the complete deployment copy; retained release snapshots<br>
+stay unchanged. Decoration is idempotent and resolves links from nested pages.</p>
+<p dir="auto">The shared release workflow is pinned to the same v7.7.0 commit as proto. Standard releases<br>
+are staged as drafts until archives and attestations are uploaded, then published once. Published<br>
+immutable prereleases cannot later be promoted. BCR publication follows release success and can<br>
+be retried independently; its failure does not require recreating a release or moving its tag.<br>
+Release helpers, numeric tags, and version agreement keep their existing contracts. No module<br>
+dependency versions change in this rollout.</p>
+<h3 dir="auto" id="published-site-budget">Published-site budget</h3>
+<p dir="auto">Each publisher fetches only the latest <code class="notranslate">coverage-pages</code> snapshot with <code class="notranslate">--depth=1</code> and no tags.<br>
+<code class="notranslate">storage-report.json</code> measures the complete retained tree before committing and the staged tree<br>
+again after deployment-only artwork. It records file counts and bytes by top-level directory,<br>
+excluding Git metadata and the report itself. Release pages and assets are not changed.</p>
+<p dir="auto">Publication warns at <strong>250 MB</strong>. An emergency <strong>9 GB</strong> payload guard leaves TAR packaging headroom;<br>
+GitHub's <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits">supported published-site limit</a><br>
+remains <strong>1 GB</strong>, so the emergency guard is not an operating target. Review growth before reaching<br>
+that limit. This repository does not currently publish coverage, so no coverage retention or<br>
+browser loader is introduced. Git history, build caches, and Actions artifacts are separate budgets.<br>
+The change follows <a href="https://github.com/mboworks/mbo/pull/549" data-hovercard-type="pull_request" data-hovercard-url="/mboworks/mbo/pull/549/hovercard">mbo PR #549</a>.</p>
+<h2 dir="auto" id="contributor-rules-and-verification">Contributor rules and verification</h2>
+<p dir="auto"><code class="notranslate">AGENTS.md</code>, <code class="notranslate">GIT_RULES.md</code>, and <code class="notranslate">STYLE_SH.md</code> synchronize applicable shared rules. <code class="notranslate">RULES.md</code><br>
+retains this repository's layout and API promises. Beautysh remains the shell formatter; no C++<br>
+style guide or competing shell formatter is introduced.</p>
+<p dir="auto">Run <code class="notranslate">bazel test //...</code> and <code class="notranslate">pre-commit run --all-files</code>. CI also builds the configured release documentation to validate<br>
+links and mappings before publication.</p>
+<h2 dir="auto" id="version-consistency">Version consistency</h2>
+<p dir="auto"><code class="notranslate">MODULE.bazel</code> and the first <code class="notranslate">CHANGELOG.md</code> heading identify the development<br>
+version. Both external consumer scripts derive their dependency version from<br>
+<code class="notranslate">MODULE.bazel</code>, because their local overrides consume this checkout. Historical<br>
+changelog entries retain their original versions.</p>
+<p dir="auto">The README installation example stays at the latest released version during<br>
+development. Before a release, run <code class="notranslate">python3 tools/prepare_release.py X.Y.Z</code> on a<br>
+release-preparation branch. It verifies the module/changelog version and updates<br>
+the README automatically. Review and merge that change before tagging. This brief<br>
+preparation stage is the only time the example should name an upcoming release.<br>
+Both <code class="notranslate">tools/trigger_release.sh</code> (including dry runs) and the archive workflow require<br>
+<code class="notranslate">prepare_release.py --check</code> to pass, so the tag, archive README, module, and<br>
+release notes agree. BCR metadata and release assets already derive their version<br>
+from the release tag. Preparation does not commit, tag, or publish anything.</p>
+<p dir="auto">The <code class="notranslate">compare-versions</code> pre-commit hook accepts the latest numeric release tag for<br>
+the README, or the development version for a prepared release. Without local tags,<br>
+it can only validate the README's format and upper bound; CI fetches all tags.<br>
+The released commit may keep its release version; the first subsequent commit<br>
+must advance the development version. <code class="notranslate">tools/version_test.py</code> exercises these<br>
+relationships and release preparation in temporary Git repositories. These tests<br>
+run through the infrastructure pre-commit hook and CI.</p></main><footer>Release snapshot · 8d336438138760ed68b6a142557c51a2d992500f</footer></body></html>

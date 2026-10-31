@@ -1,0 +1,141 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>README.md - bashtest 0.7.1</title><style>
+:root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+body { max-width: 76rem; margin: auto; padding: 2rem; }
+a { color: light-dark(#075da8, #8cc8ff); }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #888; }
+pre { padding: 1rem; overflow: auto; background: light-dark(#f3f5f7, #20252b); }
+code { font-size: .9em; } img { max-width: 100%; }
+table { display: block; overflow: auto; border-collapse: collapse; }
+th, td { border: 1px solid #888; padding: .4rem .7rem; }
+blockquote { border-left: 4px solid #888; margin-left: 0; padding-left: 1rem; }
+</style><body><nav><a href="/bashtest/site/tag/0.7.1/">Home</a><a href="/bashtest/site/tag/0.7.1/documents.html">Documentation</a><a href="https://github.com/mboworks/bashtest/releases/tag/0.7.1">Release &amp; downloads</a><a href="https://github.com/mboworks/bashtest/tree/8d336438138760ed68b6a142557c51a2d992500f">Source</a></nav><p>bashtest 0.7.1</p><main><h1 dir="auto" id="bashtestsh---a-bazel-shell-test-runner-">bashtest.sh - A Bazel shell test runner. <a target="_blank" rel="noopener noreferrer" href="https://github.com/mboworks/bashtest/blob/8d336438138760ed68b6a142557c51a2d992500f/docs/assets/mboworks-logo.png"><img src="assets/ae390126cc7956ccff154bf403f3b5008cbe446c180d74d8d2164db1e628d3ed.png" alt="MBO Works" width="64" height="64" align="right" style="max-width: 100%; height: auto; max-height: 64px;"></a></h1>
+<p dir="auto"><a href="https://mboworks.github.io/bashtest/" rel="nofollow">Release website</a> · <a href="docs/infrastructure.html">Infrastructure and publishing</a></p>
+<p dir="auto">This shell test library provides Bazel macro rules to simplify shell testing.</p>
+<p dir="auto">The library is tested with continuous integration: <a href="https://github.com/mboworks/bashtest/actions/workflows/main.yml"><img src="assets/ce733292a922c08274cf5a2096f8fa4cf01023bfa51a36ef6beecaaef371a9d9.svg" alt="Test" style="max-width: 100%;"></a>.</p>
+<h2 dir="auto" id="bashtest">Bashtest</h2>
+<p dir="auto">Run one of the following commands to get detailed information on the actual bashtest.sh script:</p>
+<ul dir="auto">
+<li><code class="notranslate">bazel run //bashtest:bashtest_help</code></li>
+<li><code class="notranslate">bazel run //bashtest:bashtest_help | pandoc -s -t man | man -l -</code></li>
+<li><code class="notranslate">bazel run //bashtest:bashtest_help | pandoc | lynx -stdin</code></li>
+</ul>
+<p dir="auto">The flags can be used on the <code class="notranslate">bazel run</code> and <code class="notranslate">bazel test</code> commands (the latter requiring <code class="notranslate">--test_arg=...</code>).</p>
+<p dir="auto">Use <code class="notranslate">--keep-tmpdir=never|failure|always</code> to control scratch retention; the default is <code class="notranslate">failure</code>.<br>
+Failure retention includes nonzero exits, failed cases or hooks, aborted runs, invalid runner settings,<br>
+and report-writing errors, even when the runner status is handled by its caller. <code class="notranslate">never</code> deletes<br>
+owned scratch data on failure; <code class="notranslate">always</code> retains it on success too. A retained path is printed at shutdown. Bazel itself may still remove a sandbox unless the test runs<br>
+locally or with <code class="notranslate">--sandbox_debug</code>.</p>
+<h3 dir="auto" id="functionality">Functionality</h3>
+<ul dir="auto">
+<li>status helper <code class="notranslate">test_has_error</code>: Returns whether a test function has had an expectation error. This is reset for every test function.</li>
+<li>status helper <code class="notranslate">test_has_failed_tests</code>: Returns whether a test program had previous failing test functions.</li>
+<li>scratch helper <code class="notranslate">test_tmpdir [name]</code>: Creates and prints a unique directory below <code class="notranslate">${BASHTEST_TMPDIR}</code>.</li>
+<li>expectation <code class="notranslate">expect_success command [args...]</code>: Assert a command exits 0.</li>
+<li>expectation <code class="notranslate">expect_exit_code status command [args...]</code>: Assert a command's final exit status.</li>
+<li>expectation <code class="notranslate">expect_eq</code> "${LHS}" "${RHS}": Asserts that two strings are the same.</li>
+<li>expectation <code class="notranslate">expect_ne</code> "${LHS}" "${RHS}": Asserts that two strings are different.</li>
+<li>expectation <code class="notranslate">expect_files_eq</code> "${LHS}" "${RHS}": Asserts that two files are the same (supports golden updates).</li>
+<li>expectation <code class="notranslate">expect_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is present in an array.</li>
+<li>expectation <code class="notranslate">expect_not_contains</code> "${EXPECTED}" "${ARRAY[@]}": Assert that one string is not present in an array.</li>
+<li>expectation <code class="notranslate">expect_output_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text contains a literal substring.</li>
+<li>expectation <code class="notranslate">expect_output_not_contains</code> "${SUBSTRING}" "${TEXT}": Assert that a text does not contain a literal substring.</li>
+<li>expectation <code class="notranslate">expect_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches an extended regular expression (bash built-in; <code class="notranslate">^</code>/<code class="notranslate">$</code> anchor the whole text).</li>
+<li>expectation <code class="notranslate">expect_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match an extended regular expression.</li>
+<li>expectation <code class="notranslate">expect_pcre_matches</code> "${REGEX}" "${TEXT}": Assert that a text matches a Perl Compatible Regular Expression (requires an external PCRE tool: <code class="notranslate">grep -P</code>, <code class="notranslate">pcre2grep</code>, or <code class="notranslate">pcregrep</code>).</li>
+<li>expectation <code class="notranslate">expect_pcre_not_matches</code> "${REGEX}" "${TEXT}": Assert that a text does not match a Perl Compatible Regular Expression.</li>
+<li>control <code class="notranslate">skip_test</code> "${REASON}": Marks the current test as skipped and reports the reason. Use <code class="notranslate">skip_test "reason" &amp;&amp; return</code> to end the test body.</li>
+<li>special test function <code class="notranslate">test::test_init</code>: If present, then this function runs first! Tests will only be executed if it succeeds.</li>
+<li>special test function <code class="notranslate">test::test_done</code>: If present, then this function runs last!</li>
+</ul>
+<p dir="auto">Bazel's native <code class="notranslate">--test_filter</code> (extended regular expression), test sharding, and<br>
+<code class="notranslate">--test_runner_fail_fast</code> are supported. See <a href="bashtest/README.html#filtering-sharding-and-fail-fast">selection and execution controls</a><br>
+for filter precedence, shard assignment, and teardown behavior.</p>
+<p dir="auto">Failed expectations include their source file and line. Golden-file failures<br>
+print unified diffs on stderr and include them in JUnit reports without requiring<br>
+<code class="notranslate">--verbose</code>. Output streams live while reports capture it, and an interrupted run<br>
+leaves a provisional report identifying the last active function; see <a href="bashtest/README.html#failure-diagnostics">failure diagnostics</a>.</p>
+<h3 dir="auto" id="example">Example</h3>
+<ol dir="auto">
+<li>Write a test that sources bashtest.</li>
+</ol>
+<div class="highlight highlight-source-shell" dir="auto"><pre class="notranslate"><span class="pl-c1">set</span> -euo pipefail
+
+<span class="pl-c"><span class="pl-c">#</span> shellcheck disable=SC1090,SC1091,SC2154</span>
+<span class="pl-c1">source</span> <span class="pl-s"><span class="pl-pds">"</span><span class="pl-smi">${mboworks_bashtest}</span><span class="pl-pds">"</span></span>
+
+<span class="pl-en">test::my_test</span>() {
+  expect_ne <span class="pl-s"><span class="pl-pds">"</span>Hello<span class="pl-pds">"</span></span> <span class="pl-s"><span class="pl-pds">"</span>World<span class="pl-pds">"</span></span>
+  <span class="pl-c"><span class="pl-c">#</span> Your tests go here...</span>
+}
+
+<span class="pl-c"><span class="pl-c">#</span> More tests go here...</span>
+
+test_runner</pre></div>
+<ol start="2" dir="auto">
+<li>Write or extend a BUILD file</li>
+</ol>
+<div class="highlight highlight-source-python" dir="auto"><pre class="notranslate"><span class="pl-en">load</span>(<span class="pl-s">"@mboworks_bashtest//bashtest:bashtest.bzl"</span>, <span class="pl-s">"bashtest"</span>)
+
+<span class="pl-en">bashtest</span>(
+    <span class="pl-s1">name</span> <span class="pl-c1">=</span> <span class="pl-s">"sh_test"</span>,
+    <span class="pl-s1">srcs</span> <span class="pl-c1">=</span> [<span class="pl-s">"sh_test.sh"</span>],
+)</pre></div>
+<p dir="auto">Execution properties such as <code class="notranslate">exec_properties = {"test.no-sandbox": "1"}</code> apply<br>
+to the test execution only; generated launcher binaries do not inherit them.</p>
+<h3 dir="auto" id="checking-commands">Checking commands</h3>
+<p dir="auto">Use <code class="notranslate">expect_success command args...</code> or <code class="notranslate">expect_exit_code status command args...</code><br>
+to check command execution. Bash's <code class="notranslate">set -e</code> alone does not reliably detect command<br>
+failures inside test functions. Opt into <code class="notranslate">--strict-commands</code> to also record<br>
+unhandled command failures; this requires a standalone <code class="notranslate">test_runner</code> call.<br>
+See <a href="bashtest/README.html#command-failure-handling">command failure handling</a>.</p>
+<h3 dir="auto" id="matching-command-output">Matching command output</h3>
+<p dir="auto">To assert on captured command output, prefer the built-in matchers<br>
+(<code class="notranslate">expect_output_contains</code>, <code class="notranslate">expect_matches</code>, <code class="notranslate">expect_pcre_matches</code>) over<br>
+hand-rolled pipelines.</p>
+<div class="markdown-alert markdown-alert-warning" dir="auto"><p class="markdown-alert-title" dir="auto"><svg data-component="Octicon" class="octicon octicon-alert mr-2" viewbox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>Warning</p><p dir="auto">bashtest runs under <code class="notranslate">set -o pipefail</code> (and recommends the same for your test<br>
+scripts). The common idiom <code class="notranslate">printf '%s' "${output}" | grep -qE '...'</code> is a<br>
+footgun there: <code class="notranslate">grep -q</code> exits on the first match, the producing command gets<br>
+<code class="notranslate">SIGPIPE</code>, and <code class="notranslate">pipefail</code> turns that into a non-zero exit — a flaky failure on<br>
+large output. Feed the text via a here-string (<code class="notranslate">grep -qE -- '...' &lt;&lt;&lt;"${output}"</code>)<br>
+or, better, use <code class="notranslate">expect_matches</code>, which relies on bash's built-in <code class="notranslate">[[ =~ ]]</code><br>
+and spawns no subprocess at all.</p>
+</div>
+<h2 dir="auto" id="installation-and-requirements">Installation and requirements</h2>
+<p dir="auto">Linux and macOS require Bash and Unix utilities (<code class="notranslate">coreutils</code>, <code class="notranslate">diff</code>, <code class="notranslate">sed</code>, and<br>
+<code class="notranslate">grep</code>); JUnit reporting also uses <code class="notranslate">head</code>, <code class="notranslate">tail</code>, <code class="notranslate">tee</code>, and <code class="notranslate">wc</code> (plus the system<br>
+<code class="notranslate">ps</code> on macOS). PCRE assertions need a supported PCRE tool.</p>
+<p dir="auto">On Windows x86-64, <code class="notranslate">bashtest</code> automatically downloads a pinned MSYS2 runtime,<br>
+including Bash, coreutils, diffutils, grep with PCRE support, sed, and their DLLs.<br>
+No MSYS2 installation, <code class="notranslate">BAZEL_SH</code>, or manual <code class="notranslate">PATH</code> setup is needed for bashtest<br>
+rules. The runtime is private to Bazel and does not install or update system<br>
+software. A Windows shell toolchain also supplies Bazel's shell-based test<br>
+helpers. Native Bazel 7 shell rules and <code class="notranslate">genrule</code> actions retain their own<br>
+requirements.<br>
+The first Windows build needs network access; subsequent builds can use Bazel's<br>
+repository cache. See <a href="bashtest/runtime/README.html">runtime details</a>.</p>
+<p dir="auto">Run Bazel from PowerShell or Command Prompt on Windows. When invoking it from<br>
+MSYS2 or Git Bash, set <code class="notranslate">MSYS_NO_PATHCONV=1</code> to preserve Bazel labels such as <code class="notranslate">//...</code>.<br>
+Keep shell scripts checked out with LF line endings.</p>
+<p dir="auto">The <code class="notranslate">bashtest</code> macro resolves its framework and test script through rules_shell's<br>
+runfiles library, including manifest-only runfiles on Windows. Existing tests<br>
+continue to use <code class="notranslate">source "${mboworks_bashtest}"</code>. The launcher also makes <code class="notranslate">rlocation</code><br>
+available for declared <code class="notranslate">data</code> dependencies: pass <code class="notranslate">$(rlocationpath :file)</code> through<br>
+an <code class="notranslate">env</code> entry, then resolve it with <code class="notranslate">rlocation</code> in the script. This also works<br>
+when consumers rename the module with <code class="notranslate">repo_name</code>.</p>
+<p dir="auto">Golden updates use the test workspace's logical runfile paths. Pass an explicit<br>
+workspace root with <code class="notranslate">--update-golden</code> and use <code class="notranslate">rlocation</code> to find golden files;<br>
+manifest-only execution does not require a runfiles symlink tree. File comparison<br>
+remains byte-for-byte, so CRLF and LF golden files are intentionally different.</p>
+<h3 dir="auto" id="modulebazel">MODULE.bazel</h3>
+<p dir="auto">Use the latest published version from<br>
+<a href="https://github.com/mboworks/bashtest/releases">Releases</a> when consuming bashtest<br>
+through the Bazel Central Registry.</p>
+<pre class="notranslate"><code class="notranslate">bazel_dep(name = "mboworks_bashtest", version = "0.7.1")
+</code></pre>
+<p dir="auto">Executable helpers can be declared with <code class="notranslate">tools = {"GENERATOR": "//tools:generator"}</code>.<br>
+Bashtest builds them for the test execution platform, includes their runfiles,<br>
+and exports their resolved paths as environment variables. Invoke them as<br>
+<code class="notranslate">"${GENERATOR}"</code>; see <a href="bashtest/README.html#executable-tools">executable tools</a>.</p>
+<p dir="auto">Bashtest reports individual test functions to Bazel CI through JUnit XML, including<br>
+failure diagnostics and skip reasons. See <a href="bashtest/README.html#junit-xml-for-ci">JUnit XML reporting</a><br>
+for GoogleTest-compatible output options and plain <code class="notranslate">sh_test</code> integration.</p></main><footer>Release snapshot · 8d336438138760ed68b6a142557c51a2d992500f</footer></body></html>
