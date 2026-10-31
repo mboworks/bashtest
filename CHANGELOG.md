@@ -1,5 +1,8 @@
 # 0.7.1
 
+* Keep test execution properties, including `test.no-sandbox`, on the outer test
+  without forwarding them to generated binary launchers.
+
 * Stream stdout/stderr live while capturing JUnit output without losing shared
   test state. Write provisional active-function reports for interrupted runs,
   drain capture workers before final results, and fail on capture/report errors.

@@ -84,6 +84,9 @@ bashtest(
 )
 ```
 
+Execution properties such as `exec_properties = {"test.no-sandbox": "1"}` apply
+to the test execution only; generated launcher binaries do not inherit them.
+
 ### Checking commands
 
 Use `expect_success command args...` or `expect_exit_code status command args...`
@@ -146,7 +149,7 @@ Use the latest published version from
 through the Bazel Central Registry.
 
 ```
-bazel_dep(name = "mboworks_bashtest", version = "0.7.0")
+bazel_dep(name = "mboworks_bashtest", version = "0.7.1")
 ```
 
 Executable helpers can be declared with `tools = {"GENERATOR": "//tools:generator"}`.
