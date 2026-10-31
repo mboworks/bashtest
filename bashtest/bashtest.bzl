@@ -78,7 +78,7 @@ def bashtest(
         deps:      Dependencies which will have bashtest_sh automatically added.
         env:       Environment name that automatically adds `mboworks_bashtest`.
         tools:     Environment variable names mapped to executable targets built for test execution.
-        **kwargs:  All other attributes are passed through as is.
+        **kwargs:  Attributes of the outer test. Test execution properties are not forwarded to binary launchers.
     """
 
     # Keep configurable srcs working; rlocationpath validates that the selected
@@ -99,7 +99,7 @@ def bashtest(
     # owns both this executable and every execution-platform tool dependency.
     runner_name = name + "__bashtest_launcher"
     launcher_kwargs = dict(kwargs)
-    for attribute in ["args", "env_inherit", "size", "timeout", "flaky", "shard_count", "local", "exec_group_compatible_with"]:
+    for attribute in ["args", "env_inherit", "size", "timeout", "flaky", "shard_count", "local", "exec_group_compatible_with", "exec_properties"]:
         launcher_kwargs.pop(attribute, None)
     launcher_kwargs["testonly"] = True
     compatibility = kwargs.get("target_compatible_with", [])
