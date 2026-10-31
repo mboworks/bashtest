@@ -1,3 +1,7 @@
+# 0.7.2
+
+* Submit future Bazel Central Registry releases for Bazel 8.x and 9.x only.
+
 # 0.7.1
 
 * Keep test execution properties, including `test.no-sandbox`, on the outer test
