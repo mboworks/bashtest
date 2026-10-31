@@ -52,7 +52,9 @@ def execution_properties_test(name):
     Args:
         name: Name of the executable regression test.
     """
-    properties = {"test.no-sandbox": "1"}
+
+    # A neutral property exercises the test exec group in every runfiles mode.
+    properties = {"test.bashtest-regression": "1"}
     bashtest(
         name = name,
         srcs = ["exec_properties_test.sh"],
