@@ -108,6 +108,10 @@ The shared release workflow is pinned to the same v7.7.0 commit as proto. Standa
 are staged as drafts until archives and attestations are uploaded, then published once. Published
 immutable prereleases cannot later be promoted. BCR publication follows release success and can
 be retried independently; its failure does not require recreating a release or moving its tag.
+The `.bcr/presubmit.yml` template tests future registry submissions with Bazel 8.x
+and 9.x across all configured platforms. This matches the registry support decision
+for 0.7.1; the repository test matrix remains a separate configuration.
+
 Release helpers, numeric tags, and version agreement keep their existing contracts. No module
 dependency versions change in this rollout.
 
