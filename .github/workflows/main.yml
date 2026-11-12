@@ -20,7 +20,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: bazel-contrib/setup-bazel@0.19.1
+      - uses: bazel-contrib/setup-bazel@0.19.2
         with:
           cache-save: false
           bazelisk-cache: true
@@ -65,7 +65,7 @@ jobs:
       run: |
         mkdir -p "${RUNNER_TEMP}/test-results"
         echo "BASHTEST_CI_REPORTS=${RUNNER_TEMP}/test-results" >> "${GITHUB_ENV}"
-    - uses: bazel-contrib/setup-bazel@0.19.1
+    - uses: bazel-contrib/setup-bazel@0.19.2
       with:
         cache-save: ${{ github.ref == 'refs/heads/main' }}
         bazelisk-cache: true
